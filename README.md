@@ -6,9 +6,11 @@ for training jobs over HTTP, with token auth and a sequential job queue
 
 ## Run
 
+Put the token in `.env` (gitignored): `GPU_SERVER_TOKEN=<long random token>`.
+
 ```powershell
-$env:GPU_SERVER_TOKEN = "<pick a long random token>"
-.\.venv-server\Scripts\python.exe -m uvicorn gpu_server.main:app --host 0.0.0.0 --port 8077
+.\start.ps1   # starts the server in the background, logs to server_stdout.log/server_stderr.log
+.\stop.ps1    # stops it (finds the process by the port it's listening on, kills it and its child)
 ```
 
 `GPU_SERVER_TRAIN_PYTHON` controls which Python runs training subprocesses
