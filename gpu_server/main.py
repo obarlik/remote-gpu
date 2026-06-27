@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 import uuid
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -56,7 +57,8 @@ def upload_file(file: UploadFile, _: None = Depends(require_token)):
     file_id = uuid.uuid4().hex[:12]
     file_dir = UPLOADS_DIR / file_id
     file_dir.mkdir(parents=True, exist_ok=True)
-    dest = file_dir / file.filename
+    safe_name = Path(file.filename or "upload.bin").name  # strip any path components
+    dest = file_dir / safe_name
     with open(dest, "wb") as out:
         shutil.copyfileobj(file.file, out)
     return {"file_id": file_id, "path": str(dest)}
@@ -95,6 +97,18 @@ def get_job_logs(job_id: str, _: None = Depends(require_token)):
     if not job.log_path.exists():
         return ""
     return job.log_path.read_text(encoding="utf-8", errors="replace")
+
+
+@app.get("/v1/jobs/{job_id}/files", summary="List files available in the job's output dir")
+def list_job_files(job_id: str, _: None = Depends(require_token)):
+    job = job_queue.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    return [
+        {"filename": f.name, "size_bytes": f.stat().st_size}
+        for f in sorted(job.output_dir.iterdir())
+        if f.is_file()
+    ]
 
 
 @app.get("/v1/jobs/{job_id}/files/{filename}", summary="Download a result file from the job's output dir")
