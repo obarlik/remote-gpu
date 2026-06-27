@@ -80,17 +80,27 @@ class JobQueue:
                 job.status = "cancelled"
                 return True
             if job.status == "running" and job.process is not None:
+                job.status = "cancelled"
                 job.process.terminate()
                 return True
         return False
 
     def _worker_loop(self) -> None:
+        # Any uncaught exception here would silently kill the worker thread
+        # and freeze the queue forever, so every job is isolated in a
+        # try/except: one broken job must never take down the server.
         while True:
             job_id = self._pending.get()
             job = self._jobs[job_id]
             if job.status == "cancelled":
                 continue
-            self._run_job(job)
+            try:
+                self._run_job(job)
+            except Exception as exc:
+                with job.lock:
+                    job.status = "failed"
+                    job.error = f"server-side error launching job: {exc}"
+                    job.finished_at = time.time()
 
     @staticmethod
     def _build_command(job: "Job", params_path: Path) -> list[str]:
