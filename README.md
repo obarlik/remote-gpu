@@ -36,6 +36,16 @@ This is the escape hatch that makes the server framework-agnostic — a script
 that loads a raw `.cl` kernel file and runs it via pyopencl works exactly
 the same way as a pure-torch script.
 
+## Dashboard
+
+`GET /dashboard` — a small browser page (no build step, vanilla JS) showing
+the job list, live status, and a best-effort loss chart parsed from
+whatever "step N ... loss X" or "loss: X" text appears in a job's log.
+It polls the same `/v1/*` API every 3s; enter the bearer token once and
+it's kept in the browser's localStorage. Since it's just a thin client over
+the existing API, it doesn't affect running jobs and exposes nothing the
+API doesn't already expose.
+
 ## Endpoints
 
 - `GET /v1/gpu` — name, VRAM, utilization (via `nvidia-smi`)

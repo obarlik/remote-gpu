@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>remote-gpu dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #111; color: #ddd; margin: 0; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .card { background: #1b1b1b; border: 1px solid #333; border-radius: 8px; padding: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #2a2a2a; }
+  tr.selected { background: #233; }
+  tr:hover { cursor: pointer; background: #1f2a33; }
+  .status-running { color: #4ade80; }
+  .status-failed { color: #f87171; }
+  .status-completed { color: #60a5fa; }
+  .status-queued { color: #facc15; }
+  .status-cancelled { color: #999; }
+  input, button { background: #222; color: #ddd; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }
+  #log { white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; background: #0c0c0c; padding: 8px; border-radius: 4px; }
+  canvas { background: #0c0c0c; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>remote-gpu dashboard</h1>
+<div class="row">
+  <div class="card">
+    Bearer token: <input id="token" type="password" size="40">
+    <button onclick="saveToken()">Save</button>
+    <span id="gpu"></span>
+  </div>
+</div>
+<div class="row" style="margin-top:12px; align-items: flex-start;">
+  <div class="card" style="min-width:480px;">
+    <b>Jobs</b>
+    <table id="jobs"><thead><tr><th>id</th><th>task</th><th>status</th><th>started</th></tr></thead><tbody></tbody></table>
+  </div>
+  <div class="card" style="flex:1; min-width:480px;">
+    <b id="jobTitle">Select a job</b>
+    <div>loss (best-effort, parsed from log lines containing "loss")</div>
+    <canvas id="chart" width="560" height="220"></canvas>
+    <div id="log"></div>
+  </div>
+</div>
+<script>
+const API = location.origin;
+let selectedJobId = null;
+
+function getToken() { return localStorage.getItem("gpu_token") || ""; }
+function saveToken() { localStorage.setItem("gpu_token", document.getElementById("token").value); }
+document.getElementById("token").value = getToken();
+
+async function api(path) {
+  const res = await fetch(API + path, { headers: { Authorization: "Bearer " + getToken() } });
+  if (!res.ok) throw new Error(path + " -> " + res.status);
+  return res;
+}
+
+function fmtTime(t) { return t ? new Date(t * 1000).toLocaleTimeString() : "-"; }
+
+async function refreshGpu() {
+  try {
+    const gpu = await (await api("/v1/gpu")).json();
+    document.getElementById("gpu").textContent =
+      `  ${gpu.name} | ${gpu.utilization_pct}% util | ${gpu.memory_used_mb}/${gpu.memory_total_mb} MB`;
+  } catch (e) { document.getElementById("gpu").textContent = "  (gpu status unavailable)"; }
+}
+
+async function refreshJobs() {
+  let jobs = [];
+  try { jobs = await (await api("/v1/jobs")).json(); } catch (e) { return; }
+  const body = document.querySelector("#jobs tbody");
+  body.innerHTML = "";
+  for (const j of jobs.slice().reverse()) {
+    const tr = document.createElement("tr");
+    if (j.id === selectedJobId) tr.className = "selected";
+    tr.innerHTML = `<td>${j.id}</td><td>${j.task}</td>` +
+      `<td class="status-${j.status}">${j.status}</td><td>${fmtTime(j.started_at)}</td>`;
+    tr.onclick = () => { selectedJobId = j.id; refreshDetail(); };
+    body.appendChild(tr);
+  }
+}
+
+// Best-effort: pulls any "step N ... loss X" or "loss: X" pattern out of
+// raw log text. Driver scripts aren't required to log in any particular
+// format, so this is a convenience visualization, not a guaranteed metric.
+function parseLossPoints(logText) {
+  const points = [];
+  const lines = logText.split("\n");
+  let autoStep = 0;
+  const stepLossRe = /step\s+(\d+)(?:\/\d+)?.*?loss[:=\s]+([0-9.eE+-]+)/i;
+  const lossOnlyRe = /loss[:=\s]+([0-9.eE+-]+)/i;
+  for (const line of lines) {
+    const m1 = line.match(stepLossRe);
+    if (m1) { points.push([Number(m1[1]), Number(m1[2])]); continue; }
+    const m2 = line.match(lossOnlyRe);
+    if (m2) points.push([autoStep, Number(m2[1])]);
+    if (m1 || m2) autoStep++;
+  }
+  return points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+}
+
+function drawChart(points) {
+  const canvas = document.getElementById("chart");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (points.length < 2) {
+    ctx.fillStyle = "#888";
+    ctx.fillText("not enough data yet", 10, 20);
+    return;
+  }
+  const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const pad = 30;
+  const sx = (x) => pad + ((x - xMin) / (xMax - xMin || 1)) * (canvas.width - 2 * pad);
+  const sy = (y) => canvas.height - pad - ((y - yMin) / (yMax - yMin || 1)) * (canvas.height - 2 * pad);
+  ctx.strokeStyle = "#4ade80";
+  ctx.beginPath();
+  points.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p[0]), sy(p[1])) : ctx.lineTo(sx(p[0]), sy(p[1]))));
+  ctx.stroke();
+  ctx.fillStyle = "#888";
+  ctx.fillText(`loss: ${yMin.toFixed(4)} - ${yMax.toFixed(4)}  |  step: ${xMin} - ${xMax}`, pad, 15);
+}
+
+async function refreshDetail() {
+  if (!selectedJobId) return;
+  document.getElementById("jobTitle").textContent = "Job " + selectedJobId;
+  let logText = "";
+  try { logText = await (await api(`/v1/jobs/${selectedJobId}/logs`)).text(); } catch (e) { logText = "(failed to load logs)"; }
+  document.getElementById("log").textContent = logText.split("\n").slice(-50).join("\n");
+  drawChart(parseLossPoints(logText));
+}
+
+async function tick() { await refreshGpu(); await refreshJobs(); await refreshDetail(); }
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>

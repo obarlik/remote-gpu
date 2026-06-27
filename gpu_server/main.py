@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
 from gpu_server.auth import require_token
 from gpu_server.config import DATASETS_DIR as UPLOADS_DIR
@@ -37,6 +37,17 @@ app = FastAPI(
 # client sends Accept-Encoding: gzip. Pure response-side, opt-in via that
 # header, so clients that don't ask for it see no change at all.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
+_DASHBOARD_HTML = (Path(__file__).resolve().parent / "static" / "dashboard.html").read_text(encoding="utf-8")
+
+
+@app.get("/dashboard", response_class=HTMLResponse, summary="Web UI: job list, status, and a best-effort loss chart")
+def dashboard():
+    """Static page; it calls the same /v1/* API from the browser using a
+    bearer token you enter once (stored in the browser's localStorage).
+    Doesn't expose anything not already available via the API."""
+    return _DASHBOARD_HTML
 
 
 @app.get("/v1/gpu", summary="Current GPU name, VRAM, and utilization")
