@@ -21,9 +21,17 @@ app = FastAPI(
         "All endpoints require `Authorization: Bearer <token>`. "
         "Submit a job with task='custom_script' to run any framework-agnostic "
         "training script (torch, OpenCL, raw CUDA kernels, ...), or task="
-        "'transformer_train' for the built-in parametrized transformer LM."
+        "'transformer_train' for the built-in parametrized transformer LM.\n\n"
+        "**For slow/unreliable links:** uploads can be sent in one shot "
+        "(`POST /v1/files`) or resumed/chunked (`POST /v1/uploads` + `PUT "
+        ".../{id}?offset=N` + `.../complete` — survives a dropped connection, "
+        "see `GET /v1/uploads/{id}` to find the resume offset). Both upload "
+        "paths support an explicit `gzip_encoded` flag to send compressed "
+        "bytes. Downloads (`GET /v1/jobs/{id}/files/{filename}`) support "
+        "`Range` requests for the same reason. Responses are gzip-compressed "
+        "when the client sends `Accept-Encoding: gzip`."
     ),
-    version="1.0.0",
+    version="1.1.0",
 )
 # Compresses outgoing responses (job lists, logs, file downloads) when the
 # client sends Accept-Encoding: gzip. Pure response-side, opt-in via that
