@@ -39,15 +39,25 @@ the same way as a pure-torch script.
 ## Endpoints
 
 - `GET /v1/gpu` — name, VRAM, utilization (via `nvidia-smi`)
-- `POST /v1/files` — upload a dataset, driver script, or kernel source.
-  Upload a `.gz`-suffixed filename to send it gzip-compressed; it's
-  transparently decompressed to disk under the name with `.gz` stripped.
-  Useful on a slow/jittery link — plain uploads are unaffected.
+- `POST /v1/files` — upload a dataset, driver script, or kernel source in
+  one shot. `?gzip_encoded=true` decompresses the body on arrival — use
+  this only when the bytes you're sending are gzip as a *transport*
+  encoding; a real `.gz` dataset you want stored byte-for-byte must leave
+  this unset (the filename alone never implies decompression).
+- `POST /v1/uploads` / `PUT /v1/uploads/{id}?offset=N` / `POST
+  /v1/uploads/{id}/complete` — resumable, chunkable upload. Send the file
+  as one PUT or many, in order; if the connection drops, `GET
+  /v1/uploads/{id}` tells you the received_bytes offset to resume from.
+  Wrong offset is rejected with 409 instead of corrupting the file.
+  `DELETE /v1/uploads/{id}` aborts and discards. Same `gzip_encoded` flag
+  as `/v1/files`, set at session start.
 - `POST /v1/jobs` — submit a job, returns job id
 - `GET /v1/jobs` / `GET /v1/jobs/{id}` — list / inspect status
 - `GET /v1/jobs/{id}/logs` — full stdout/stderr so far
 - `GET /v1/jobs/{id}/files` — list output files a job produced (name + size)
-- `GET /v1/jobs/{id}/files/{filename}` — download a result file (e.g. checkpoint)
+- `GET /v1/jobs/{id}/files/{filename}` — download a result file (e.g.
+  checkpoint). Supports `Range` requests, so a dropped download can resume
+  instead of restarting.
 - `DELETE /v1/jobs/{id}` — cancel a queued or running job
 
 All endpoints require `Authorization: Bearer <GPU_SERVER_TOKEN>`.

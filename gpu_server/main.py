@@ -4,14 +4,15 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from gpu_server.auth import require_token
 from gpu_server.config import DATASETS_DIR as UPLOADS_DIR
 from gpu_server.queue_manager import job_queue
-from gpu_server.schemas import JobInfo, JobSubmitRequest
+from gpu_server.schemas import JobInfo, JobSubmitRequest, UploadInitRequest
+from gpu_server.uploads import upload_manager
 
 app = FastAPI(
     title="remote-gpu training server",
@@ -55,32 +56,89 @@ def gpu_status(_: None = Depends(require_token)):
 
 
 @app.post("/v1/files", summary="Upload a dataset, driver script, or kernel source")
-def upload_file(file: UploadFile, _: None = Depends(require_token)):
+def upload_file(file: UploadFile, gzip_encoded: bool = False, _: None = Depends(require_token)):
     """Generic upload endpoint: a dataset, a driver script, or a raw kernel
     source (.cl / .cu / .py) — anything a training job's script_path or
     params may need to reference by path. Returns {file_id, path}; pass
     `path` as script_path (or any custom param) when submitting a job.
 
-    If the uploaded filename ends in '.gz', the body is treated as gzip and
-    transparently decompressed to disk under the name with '.gz' stripped —
-    this lets a slow/jittery link send fewer bytes without any other part
-    of the contract (script_path, params, job execution) changing at all.
-    Plain (non-.gz) uploads behave exactly as before."""
+    Set ?gzip_encoded=true if the request body itself is gzip-compressed
+    (a transport-only encoding) — it's decompressed on arrival and stored
+    under the filename you gave, unchanged. This is independent of the
+    filename: a file that is itself a real .gz dataset and should be
+    stored as-is must NOT set this flag, since the filename alone doesn't
+    tell the server your intent."""
     file_id = uuid.uuid4().hex[:12]
     file_dir = UPLOADS_DIR / file_id
     file_dir.mkdir(parents=True, exist_ok=True)
     safe_name = Path(file.filename or "upload.bin").name  # strip any path components
+    dest = file_dir / safe_name
 
-    if safe_name.endswith(".gz"):
-        dest = file_dir / safe_name[: -len(".gz")]
+    if gzip_encoded:
         with gzip.GzipFile(fileobj=file.file, mode="rb") as gz_in, open(dest, "wb") as out:
             shutil.copyfileobj(gz_in, out)
     else:
-        dest = file_dir / safe_name
         with open(dest, "wb") as out:
             shutil.copyfileobj(file.file, out)
 
     return {"file_id": file_id, "path": str(dest)}
+
+
+@app.post("/v1/uploads", summary="Start a resumable/chunked upload session")
+def start_upload(req: UploadInitRequest, _: None = Depends(require_token)):
+    """Use this instead of /v1/files when the link is slow or unreliable, or
+    when the client wants to send the file in pieces rather than one shot.
+    Returns {upload_id, filename, received_bytes: 0}. Then PUT chunks to
+    /v1/uploads/{upload_id} in order, and POST .../complete when done."""
+    session = upload_manager.start(req.filename, req.gzip_encoded)
+    return session.to_dict()
+
+
+@app.get("/v1/uploads/{upload_id}", summary="Check how many bytes an upload session has received")
+def get_upload_status(upload_id: str, _: None = Depends(require_token)):
+    """After a dropped connection, call this to find out where to resume:
+    send the next chunk starting at the returned received_bytes offset."""
+    session = upload_manager.get(upload_id)
+    if session is None:
+        raise HTTPException(404, "Upload session not found")
+    return session.to_dict()
+
+
+@app.put("/v1/uploads/{upload_id}", summary="Append one chunk at a given byte offset")
+async def put_upload_chunk(upload_id: str, offset: int, request: Request, _: None = Depends(require_token)):
+    """The chunk can be any size — a whole file in one PUT, or split into
+    many small ones; offset must equal the session's current received_bytes
+    (i.e. chunks are appended strictly in order, no gaps). If it doesn't
+    match, the server returns 409 with the correct offset to retry at."""
+    session = upload_manager.get(upload_id)
+    if session is None:
+        raise HTTPException(404, "Upload session not found")
+    data = await request.body()
+    try:
+        received_bytes = upload_manager.append_chunk(session, offset, data)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"received_bytes": received_bytes}
+
+
+@app.post("/v1/uploads/{upload_id}/complete", summary="Finalize an upload session into a usable file")
+def complete_upload(upload_id: str, _: None = Depends(require_token)):
+    """Returns {file_id, path} in the same shape as POST /v1/files, so the
+    result can be used as script_path/params the same way either way."""
+    session = upload_manager.get(upload_id)
+    if session is None:
+        raise HTTPException(404, "Upload session not found")
+    file_id, dest = upload_manager.complete(session)
+    return {"file_id": file_id, "path": str(dest)}
+
+
+@app.delete("/v1/uploads/{upload_id}", summary="Abort an upload session and discard partial data")
+def abort_upload(upload_id: str, _: None = Depends(require_token)):
+    session = upload_manager.get(upload_id)
+    if session is None:
+        raise HTTPException(404, "Upload session not found")
+    upload_manager.abort(session)
+    return {"aborted": True}
 
 
 @app.post("/v1/jobs", response_model=JobInfo, summary="Submit a training job to the queue")

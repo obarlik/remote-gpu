@@ -21,6 +21,18 @@ class JobSubmitRequest(BaseModel):
     )
 
 
+class UploadInitRequest(BaseModel):
+    filename: str = Field(..., description="Target filename to store the file under.", examples=["dataset.bin"])
+    gzip_encoded: bool = Field(
+        default=False,
+        description=(
+            "True if the bytes you PUT are gzip-compressed as a transport encoding "
+            "(decompressed on complete). Independent of the filename — a real .gz "
+            "file you want stored as-is must leave this False."
+        ),
+    )
+
+
 class JobInfo(BaseModel):
     id: str
     task: str
