@@ -39,7 +39,10 @@ the same way as a pure-torch script.
 ## Endpoints
 
 - `GET /v1/gpu` — name, VRAM, utilization (via `nvidia-smi`)
-- `POST /v1/files` — upload a dataset, driver script, or kernel source
+- `POST /v1/files` — upload a dataset, driver script, or kernel source.
+  Upload a `.gz`-suffixed filename to send it gzip-compressed; it's
+  transparently decompressed to disk under the name with `.gz` stripped.
+  Useful on a slow/jittery link — plain uploads are unaffected.
 - `POST /v1/jobs` — submit a job, returns job id
 - `GET /v1/jobs` / `GET /v1/jobs/{id}` — list / inspect status
 - `GET /v1/jobs/{id}/logs` — full stdout/stderr so far
@@ -48,6 +51,9 @@ the same way as a pure-torch script.
 - `DELETE /v1/jobs/{id}` — cancel a queued or running job
 
 All endpoints require `Authorization: Bearer <GPU_SERVER_TOKEN>`.
+
+Responses are gzip-compressed automatically when the client sends
+`Accept-Encoding: gzip` (clients that don't send it see no change).
 
 ## Example: custom kernel-based job
 

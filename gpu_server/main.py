@@ -1,9 +1,11 @@
+import gzip
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from gpu_server.auth import require_token
@@ -22,6 +24,10 @@ app = FastAPI(
     ),
     version="1.0.0",
 )
+# Compresses outgoing responses (job lists, logs, file downloads) when the
+# client sends Accept-Encoding: gzip. Pure response-side, opt-in via that
+# header, so clients that don't ask for it see no change at all.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.get("/v1/gpu", summary="Current GPU name, VRAM, and utilization")
@@ -53,14 +59,27 @@ def upload_file(file: UploadFile, _: None = Depends(require_token)):
     """Generic upload endpoint: a dataset, a driver script, or a raw kernel
     source (.cl / .cu / .py) — anything a training job's script_path or
     params may need to reference by path. Returns {file_id, path}; pass
-    `path` as script_path (or any custom param) when submitting a job."""
+    `path` as script_path (or any custom param) when submitting a job.
+
+    If the uploaded filename ends in '.gz', the body is treated as gzip and
+    transparently decompressed to disk under the name with '.gz' stripped —
+    this lets a slow/jittery link send fewer bytes without any other part
+    of the contract (script_path, params, job execution) changing at all.
+    Plain (non-.gz) uploads behave exactly as before."""
     file_id = uuid.uuid4().hex[:12]
     file_dir = UPLOADS_DIR / file_id
     file_dir.mkdir(parents=True, exist_ok=True)
     safe_name = Path(file.filename or "upload.bin").name  # strip any path components
-    dest = file_dir / safe_name
-    with open(dest, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+
+    if safe_name.endswith(".gz"):
+        dest = file_dir / safe_name[: -len(".gz")]
+        with gzip.GzipFile(fileobj=file.file, mode="rb") as gz_in, open(dest, "wb") as out:
+            shutil.copyfileobj(gz_in, out)
+    else:
+        dest = file_dir / safe_name
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+
     return {"file_id": file_id, "path": str(dest)}
 
 
