@@ -41,6 +41,7 @@ the same way as a pure-torch script.
 - `POST /v1/jobs` — submit a job, returns job id
 - `GET /v1/jobs` / `GET /v1/jobs/{id}` — list / inspect status
 - `GET /v1/jobs/{id}/logs` — full stdout/stderr so far
+- `GET /v1/jobs/{id}/files` — list output files a job produced (name + size)
 - `GET /v1/jobs/{id}/files/{filename}` — download a result file (e.g. checkpoint)
 - `DELETE /v1/jobs/{id}` — cancel a queued or running job
 
