@@ -915,7 +915,7 @@ async function refreshJobs() {
         const job = jobsById[selectedJobId];
         document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + selectedJobId.slice(0, 8);
         document.getElementById("jobSub").textContent = `Task: ${job ? job.task : "-"} | Status: ${job ? job.status : "-"}`;
-        document.getElementById("log").innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Loading...</div>';
+        document.getElementById("logLinesContainer").innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Loading...</div>';
         document.getElementById("metricsGrid").innerHTML = "";
         rawLogContent = "";
       }
