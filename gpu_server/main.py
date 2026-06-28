@@ -10,8 +10,10 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
 from gpu_server.auth import require_token
 from gpu_server.config import DATASETS_DIR as UPLOADS_DIR
+from gpu_server.projects import project_manager
 from gpu_server.queue_manager import job_queue
-from gpu_server.schemas import JobInfo, JobSubmitRequest, UploadInitRequest
+from gpu_server.routes_lab import router as lab_router
+from gpu_server.schemas import JobInfo, JobMoveRequest, JobSubmitRequest, UploadInitRequest
 from gpu_server.uploads import upload_manager
 
 app = FastAPI(
@@ -29,14 +31,26 @@ app = FastAPI(
         "paths support an explicit `gzip_encoded` flag to send compressed "
         "bytes. Downloads (`GET /v1/jobs/{id}/files/{filename}`) support "
         "`Range` requests for the same reason. Responses are gzip-compressed "
-        "when the client sends `Accept-Encoding: gzip`."
+        "when the client sends `Accept-Encoding: gzip`.\n\n"
+        "**For repeated/recurring job shapes:** define a `Template` (`POST "
+        "/v1/templates` — task + defaults + required_params, pure data, not "
+        "hardcoded) and create a `Project` from it (`POST /v1/projects` — "
+        "snapshots the template's values, so later template edits don't "
+        "affect existing projects). `POST /v1/projects/{name}/jobs` then "
+        "only needs this run's deltas — everything else is inherited from "
+        "the project. `PATCH /v1/projects/{name}` updates just the given "
+        "keys (e.g. point at a newly uploaded dataset without re-stating "
+        "everything). `PATCH /v1/jobs/{id}` assigns/moves/unassigns any "
+        "job's project after the fact, even a running one. Job history, "
+        "templates, and projects all persist across server restarts."
     ),
-    version="1.1.0",
+    version="1.2.0",
 )
 # Compresses outgoing responses (job lists, logs, file downloads) when the
 # client sends Accept-Encoding: gzip. Pure response-side, opt-in via that
 # header, so clients that don't ask for it see no change at all.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.include_router(lab_router)
 
 
 _DASHBOARD_HTML = (Path(__file__).resolve().parent / "static" / "dashboard.html").read_text(encoding="utf-8")
@@ -180,6 +194,19 @@ def list_jobs(_: None = Depends(require_token)):
 @app.get("/v1/jobs/{job_id}", response_model=JobInfo, summary="Get one job's status")
 def get_job(job_id: str, _: None = Depends(require_token)):
     job = job_queue.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    return job.to_dict()
+
+
+@app.patch("/v1/jobs/{job_id}", response_model=JobInfo, summary="Assign, move, or unassign a job's project")
+def move_job(job_id: str, req: JobMoveRequest, _: None = Depends(require_token)):
+    """Works for a job in any state, including running or already finished
+    — the project field is just a label for organizing/listing, the
+    running process (if any) never sees or depends on it."""
+    if req.project is not None and project_manager.get(req.project) is None:
+        raise HTTPException(400, f"project '{req.project}' not found")
+    job = job_queue.set_project(job_id, req.project)
     if job is None:
         raise HTTPException(404, "Job not found")
     return job.to_dict()

@@ -36,6 +36,7 @@ class UploadInitRequest(BaseModel):
 class JobInfo(BaseModel):
     id: str
     task: str
+    project: str | None = None
     status: JobStatus
     params: dict[str, Any]
     created_at: float
@@ -43,3 +44,71 @@ class JobInfo(BaseModel):
     finished_at: float | None = None
     error: str | None = None
     output_dir: str
+
+
+class JobMoveRequest(BaseModel):
+    project: str | None = Field(
+        ...,
+        description="Project name to assign this job to, or null to unassign it. Works for jobs in any state.",
+        examples=["runo"],
+    )
+
+
+class TemplateCreateRequest(BaseModel):
+    name: str = Field(..., examples=["runo_transformer_70k"])
+    task: str = Field(..., examples=["custom_script"])
+    defaults: dict[str, Any] = Field(default_factory=dict, examples=[{"steps": 70000, "lr": 3e-4}])
+    required_params: list[str] = Field(
+        default_factory=list,
+        description="Param keys that must be present (from defaults or job-time overrides) before a job can start.",
+        examples=[["script_path", "corpus_path"]],
+    )
+
+
+class TemplateUpdateRequest(BaseModel):
+    defaults: dict[str, Any] | None = None
+    required_params: list[str] | None = None
+
+
+class TemplateInfo(BaseModel):
+    name: str
+    task: str
+    defaults: dict[str, Any]
+    required_params: list[str]
+    version: int
+    created_at: float
+    updated_at: float
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(..., examples=["runo"])
+    template: str | None = Field(default=None, description="Snapshot a template's task/defaults at creation time.")
+    task: str | None = Field(default=None, description="Required if no template is given.")
+    defaults: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Project-specific values; override the template's snapshot on matching keys.",
+    )
+
+
+class ProjectUpdateRequest(BaseModel):
+    defaults: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Partial update — only the given keys are added/changed, the rest of defaults is untouched.",
+    )
+
+
+class ProjectInfo(BaseModel):
+    name: str
+    template: str | None
+    task: str
+    defaults: dict[str, Any]
+    required_params: list[str]
+    created_at: float
+    updated_at: float
+
+
+class ProjectJobRequest(BaseModel):
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="This run's deltas only — merged on top of the project's defaults.",
+    )

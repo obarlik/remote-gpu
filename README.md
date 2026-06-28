@@ -36,6 +36,31 @@ This is the escape hatch that makes the server framework-agnostic — a script
 that loads a raw `.cl` kernel file and runs it via pyopencl works exactly
 the same way as a pure-torch script.
 
+## Templates and projects
+
+For recurring job shapes, avoid re-sending everything on every submission:
+
+- `POST /v1/templates` — define a reusable blueprint: `name`, `task`,
+  `defaults`, and `required_params` (keys that must be present before a job
+  can start — catches missing config early). Pure data, not hardcoded.
+- `POST /v1/projects` — create a project, optionally `"template": "<name>"`.
+  The template's `defaults`/`required_params` are **snapshotted** at
+  creation time — editing the template later never changes existing
+  projects, only new ones.
+- `PATCH /v1/projects/{name}` — update just the given keys in `defaults`
+  (e.g. point at a newly uploaded dataset without re-stating hyperparams).
+- `POST /v1/projects/{name}/jobs` — submit a run with only this run's
+  deltas (`{"params": {...}}`); merged with the project's defaults, with
+  `required_params` validated before queueing.
+- `GET /v1/projects/{name}/jobs` — every run submitted under this project.
+- `PATCH /v1/jobs/{id}` — assign, move, or unassign any job's project after
+  the fact (`{"project": "<name>" | null}`), even one that's still running
+  or was submitted without a project. Safe at any time: the project field
+  is just a label, the actual training process never reads it.
+
+Templates, projects, and job history all persist to JSON files under
+`data/` and survive a server restart.
+
 ## Dashboard
 
 `GET /dashboard` — a small browser page (no build step, vanilla JS) showing
