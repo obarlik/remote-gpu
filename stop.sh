@@ -3,17 +3,18 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
-# Find process listening on port 8077
-PID=$(lsof -t -i:8077 2>/dev/null)
-if [ -z "$PID" ]; then
-    # Fallback to reading server.pid
-    if [ -f server.pid ]; then
-        PID=$(cat server.pid)
-    fi
+PID=""
+if [ -f server.pid ]; then
+    PID=$(cat server.pid)
 fi
 
 if [ -z "$PID" ]; then
-    echo "Nothing listening on port 8077, and server.pid not found."
+    # Fallback: find process matching the uvicorn app command line
+    PID=$(pgrep -f "gpu_server.main:app")
+fi
+
+if [ -z "$PID" ]; then
+    echo "Uvicorn server is not running (no PID found)."
     exit 0
 fi
 

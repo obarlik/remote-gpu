@@ -467,27 +467,23 @@
       <span class="gpu-stat-label">GPU Name</span>
       <span class="gpu-stat-val" id="gpuName">Querying...</span>
     </div>
-    <div class="gpu-monitor-progress-box">
-      <div class="gpu-stat-pill" style="border: none; background: transparent; padding: 0 10px;">
-        <span class="gpu-stat-label">Utilization</span>
-        <span class="gpu-stat-val">
-          <span id="gpuUtil">0%</span>
-          <div class="progress-bar-container">
-            <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
-          </div>
-        </span>
-      </div>
+    <div class="gpu-stat-pill">
+      <span class="gpu-stat-label">Utilization</span>
+      <span class="gpu-stat-val">
+        <span id="gpuUtil">0%</span>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
+        </div>
+      </span>
     </div>
-    <div class="gpu-monitor-progress-box">
-      <div class="gpu-stat-pill" style="border: none; background: transparent; padding: 0 10px;">
-        <span class="gpu-stat-label">VRAM Usage</span>
-        <span class="gpu-stat-val">
-          <span id="gpuVram">0 / 0 MB</span>
-          <div class="progress-bar-container">
-            <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
-          </div>
-        </span>
-      </div>
+    <div class="gpu-stat-pill">
+      <span class="gpu-stat-label">VRAM Usage</span>
+      <span class="gpu-stat-val">
+        <span id="gpuVram">0 / 0 MB</span>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
+        </div>
+      </span>
     </div>
   </div>
 
@@ -539,11 +535,12 @@
       <div class="focus-layout">
         <div class="focus-main-panel">
           <div class="chart-header">
-            <h3 id="focusKey" style="font-size: 15px;">Metric</h3>
+            <h3 style="font-size: 15px;"><span id="focusSwatch">&#9632;</span> <span id="focusKey">Metric</span></h3>
             <span id="focusCurrent" class="metric-current" style="font-size: 18px; font-weight: 600;">0.00</span>
           </div>
           <canvas id="focusCanvas"></canvas>
           <div class="chart-tooltip" id="focusTooltip"></div>
+          <div class="full-range-note" id="focusFullRange" style="font-size: 10px; color: var(--text-secondary); margin-top: 6px;"></div>
         </div>
         <div class="focus-sidebar" id="focusThumbs"></div>
       </div>
@@ -623,7 +620,7 @@ async function refreshGpu() {
     const vramPct = (gpu.memory_used_mb / gpu.memory_total_mb) * 100;
     document.getElementById("gpuVramBar").style.width = vramPct + "%";
   } catch (e) {
-    document.getElementById("gpuName").textContent = "(GPU details unavailable)";
+    document.getElementById("gpuName").textContent = "(GPU status unavailable)";
     document.getElementById("gpuUtil").textContent = "0%";
     document.getElementById("gpuUtilBar").style.width = "0%";
     document.getElementById("gpuVram").textContent = "0 / 0 MB";
@@ -728,10 +725,10 @@ function renderSeriesIntoCanvas(canvas, series, xMin, xMax, color, tooltipEl) {
   const w = rect.width, h = rect.height, padX = 40, padY = 20;
 
   ctx.clearRect(0, 0, w, h);
-  if (series.length < 2) return { sx: () => 0 };
+  if (series.length < 2) return { sx: () => 0, lo: 0, hi: 0, trueMin: 0, trueMax: 0 };
 
   const ys = series.map((p) => p[1]);
-  const { lo, hi } = autoRange(ys);
+  const { lo, hi, trueMin, trueMax } = autoRange(ys);
   const sx = (x) => padX + ((x - xMin) / (xMax - xMin || 1)) * (w - padX - 15);
   const sy = (y) => h - padY - ((y - lo) / ((hi - lo) || 1)) * (h - 2 * padY);
 
@@ -887,7 +884,7 @@ function renderSeriesIntoCanvas(canvas, series, xMin, xMax, color, tooltipEl) {
     };
   }
 
-  return { sx };
+  return { sx, lo, hi, trueMin, trueMax };
 }
 
 function drawMetricsChart(records) {
@@ -968,12 +965,18 @@ function renderFocusView() {
   const series = seriesFor(key);
 
   document.getElementById("focusKey").textContent = key;
+  document.getElementById("focusSwatch").style.color = color;
   document.getElementById("focusCurrent").style.color = color;
   document.getElementById("focusCurrent").textContent = fmtNum(series[series.length - 1][1]);
 
   const canvas = document.getElementById("focusCanvas");
   const tooltip = document.getElementById("focusTooltip");
-  renderSeriesIntoCanvas(canvas, series, xMin, xMax, color, tooltip);
+  const { sx, lo, hi, trueMin, trueMax } = renderSeriesIntoCanvas(canvas, series, xMin, xMax, color, tooltip);
+
+  const note = document.getElementById("focusFullRange");
+  note.textContent = (trueMin < lo || trueMax > hi)
+    ? `full range: ${fmtNum(trueMin)} – ${fmtNum(trueMax)} (axis zoomed for readability)`
+    : "";
 
   const thumbs = document.getElementById("focusThumbs");
   thumbs.innerHTML = "";
@@ -1024,9 +1027,12 @@ function drawLossChart(points) {
 function highlightTerminalLogs(text) {
   const searchVal = document.getElementById("logSearch").value.toLowerCase();
   const lines = text.split("\n");
+  
+  // Slicing last 100 lines if no search is active to keep UI smooth and performant
+  const displayedLines = searchVal ? lines : lines.slice(-100);
   const output = [];
 
-  for (let line of lines) {
+  for (let line of displayedLines) {
     if (searchVal && !line.toLowerCase().includes(searchVal)) continue;
 
     // Escaping to prevent HTML insertion
@@ -1100,16 +1106,29 @@ async function refreshDetail() {
 
   const usesMetrics = job && (job.capabilities || []).includes("metrics");
 
-  document.getElementById("metricsGrid").style.display = usesMetrics && viewMode === "grid" ? "grid" : "none";
-  document.getElementById("focusView").style.display = usesMetrics && viewMode === "focus" ? "block" : "none";
-  document.getElementById("defaultChartContainer").style.display = usesMetrics ? "none" : "block";
+  const grid = document.getElementById("metricsGrid");
+  const showGrid = usesMetrics && viewMode === "grid";
+  grid.classList.toggle("hidden", !showGrid);
+  grid.style.display = showGrid ? "grid" : "none";
+
+  const focusView = document.getElementById("focusView");
+  const showFocus = usesMetrics && viewMode === "focus";
+  focusView.classList.toggle("hidden", !showFocus);
+  focusView.style.display = showFocus ? "block" : "none";
+
+  const defaultChart = document.getElementById("defaultChartContainer");
+  defaultChart.classList.toggle("hidden", usesMetrics);
+  defaultChart.style.display = usesMetrics ? "none" : "block";
   
   if (!usesMetrics) document.getElementById("viewModeBtn").style.display = "none";
 
   if (usesMetrics) {
+    document.getElementById("chartCaption").textContent = "structured metrics (job-declared) — hover a chart for exact values";
     let records = [];
     try { records = await (await api(`/v1/jobs/${selectedJobId}/metrics`)).json(); } catch (e) { records = []; }
     drawMetricsChart(records);
+  } else {
+    document.getElementById("chartCaption").textContent = 'loss (best-effort, parsed from log lines containing "loss")';
   }
 
   try {

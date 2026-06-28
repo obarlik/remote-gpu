@@ -58,7 +58,12 @@ class Job:
         job.started_at = record.get("started_at")
         job.finished_at = record.get("finished_at")
         job.error = record.get("error")
-        job.output_dir = Path(record["output_dir"])
+        saved_path = Path(record["output_dir"])
+        if not saved_path.exists():
+            resolved = JOBS_DIR / record["id"]
+            job.output_dir = resolved if resolved.exists() else saved_path
+        else:
+            job.output_dir = saved_path
         job.log_path = job.output_dir / "log.txt"
         job.process = None
         job.lock = threading.Lock()
