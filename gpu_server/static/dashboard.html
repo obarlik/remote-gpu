@@ -580,6 +580,7 @@ let jobsById = {};
 let autoscroll = true;
 let rawLogContent = "";
 let detailAbortController = null;  // cancels stale fetches on job switch
+let detailFetchInProgress = false; // prevents tick() from clobbering user-triggered fetches
 const SERIES_COLORS = ["#03dac6", "#bb86fc", "#facc15", "#cf6679", "#3700b3", "#018786"];
 
 function getToken() { return localStorage.getItem("gpu_token") || ""; }
@@ -663,6 +664,8 @@ async function refreshJobs() {
         selectedJobId = j.id;
         setViewMode("grid");
         document.getElementById("logSearch").value = "";
+        // Clear per-job color cache so colors don't bleed across jobs
+        Object.keys(keyColors).forEach(k => delete keyColors[k]);
         // Optimistic UI: update title and clear log immediately so it feels instant
         const job = jobsById[selectedJobId];
         document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + selectedJobId.slice(0, 8);
@@ -945,10 +948,10 @@ function buildMetricCard(key, series) {
   card.onclick = () => { metricsState.focusIdx = metricsState.keys.indexOf(key); setViewMode("focus"); };
 
   const canvas = card.querySelector("canvas");
-  // Timeout ensures client rect widths compute correctly after adding to DOM
-  setTimeout(() => {
+  // requestAnimationFrame ensures layout is complete before drawing (avoids flat-line bug)
+  requestAnimationFrame(() => {
     renderSeriesIntoCanvas(canvas, series, metricsState.xMin, metricsState.xMax, color, card.querySelector(".chart-tooltip"));
-  }, 10);
+  });
 
   return card;
 }
@@ -958,10 +961,16 @@ let viewMode = "grid";
 
 function setViewMode(mode) {
   viewMode = mode;
-  document.getElementById("metricsGrid").style.display = mode === "grid" ? "grid" : "none";
-  document.getElementById("focusView").style.display = mode === "focus" ? "block" : "none";
-  document.getElementById("viewModeBtn").textContent = mode === "grid" ? "TV Mode" : "Grid view";
-  if (mode === "focus") renderFocusView();
+  const grid = document.getElementById("metricsGrid");
+  const focus = document.getElementById("focusView");
+  const showGrid = mode === "grid";
+  const showFocus = mode === "focus";
+  grid.classList.toggle("hidden", !showGrid);
+  grid.style.display = showGrid ? "grid" : "none";
+  focus.classList.toggle("hidden", !showFocus);
+  focus.style.display = showFocus ? "block" : "none";
+  document.getElementById("viewModeBtn").textContent = showGrid ? "TV Mode" : "Grid view";
+  if (showFocus) renderFocusView();
 }
 function toggleViewMode() { setViewMode(viewMode === "grid" ? "focus" : "grid"); }
 
@@ -1106,14 +1115,18 @@ async function cancelSelectedJob() {
   }
 }
 
-async function refreshDetail() {
+async function refreshDetail(fromTick = false) {
   if (!selectedJobId) return;
+  // If called from tick() and a user-triggered fetch is running, skip to avoid clobbering it
+  if (fromTick && detailFetchInProgress) return;
+
   const jobId = selectedJobId;  // snapshot to detect stale responses
 
   // Cancel any previous in-flight fetch
   if (detailAbortController) detailAbortController.abort();
   detailAbortController = new AbortController();
   const signal = detailAbortController.signal;
+  detailFetchInProgress = true;
 
   const job = jobsById[jobId];
   document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + jobId.slice(0, 8);
@@ -1161,7 +1174,7 @@ async function refreshDetail() {
     ]);
 
     // Guard: discard if user switched to another job while fetching
-    if (jobId !== selectedJobId) return;
+    if (jobId !== selectedJobId) { detailFetchInProgress = false; return; }
 
     rawLogContent = logsResult;
     filterLogs();
@@ -1172,16 +1185,18 @@ async function refreshDetail() {
       drawLossChart(parseLossPoints(rawLogContent));
     }
   } catch (e) {
-    if (e.name === "AbortError") return;  // intentionally cancelled, ignore
+    if (e.name === "AbortError") { detailFetchInProgress = false; return; }
     rawLogContent = "(failed to load)";
     filterLogs();
+  } finally {
+    detailFetchInProgress = false;
   }
 }
 
 async function tick() {
-  await refreshGpu();
-  await refreshJobs();
-  await refreshDetail();
+  // GPU and Jobs fetched in parallel — both are independent of each other
+  await Promise.all([refreshGpu(), refreshJobs()]);
+  await refreshDetail(true);  // pass fromTick=true so it skips if a user-fetch is active
 }
 
 tick();
