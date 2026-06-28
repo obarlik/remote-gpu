@@ -579,6 +579,7 @@ let selectedJobId = null;
 let jobsById = {};
 let autoscroll = true;
 let rawLogContent = "";
+let detailAbortController = null;  // cancels stale fetches on job switch
 const SERIES_COLORS = ["#03dac6", "#bb86fc", "#facc15", "#cf6679", "#3700b3", "#018786"];
 
 function getToken() { return localStorage.getItem("gpu_token") || ""; }
@@ -653,13 +654,24 @@ async function refreshJobs() {
       <td style="color: var(--text-secondary);">${fmtTime(j.started_at)}</td>
     `;
     tr.onclick = () => {
-      if (j.id !== selectedJobId) {
+      // Instantly highlight clicked row — don't wait for network or tick
+      document.querySelectorAll("#jobs tbody tr").forEach(r => r.classList.remove("selected"));
+      tr.classList.add("selected");
+
+      const isNew = j.id !== selectedJobId;
+      if (isNew) {
         selectedJobId = j.id;
         setViewMode("grid");
         document.getElementById("logSearch").value = "";
+        // Optimistic UI: update title and clear log immediately so it feels instant
+        const job = jobsById[selectedJobId];
+        document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + selectedJobId.slice(0, 8);
+        document.getElementById("jobSub").textContent = `Task: ${job ? job.task : "-"} | Status: ${job ? job.status : "-"}`;
+        document.getElementById("log").innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Loading...</div>';
+        document.getElementById("metricsGrid").innerHTML = "";
+        rawLogContent = "";
       }
       refreshDetail();
-      refreshJobsListHighlight();
     };
     body.appendChild(tr);
   }
@@ -717,12 +729,15 @@ function autoRange(ys) {
 function renderSeriesIntoCanvas(canvas, series, xMin, xMax, color, tooltipEl) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  // Fallback to explicit attribute dimensions if element has not been laid out yet
+  const w = rect.width  || canvas.getAttribute("data-w") || canvas.offsetWidth  || 160;
+  const h = rect.height || canvas.getAttribute("data-h") || canvas.offsetHeight || 50;
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
 
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
-  const w = rect.width, h = rect.height, padX = 40, padY = 20;
+  const padX = 40, padY = (h < 60 ? 6 : 20);
 
   ctx.clearRect(0, 0, w, h);
   if (series.length < 2) return { sx: () => 0, lo: 0, hi: 0, trueMin: 0, trueMax: 0 };
@@ -989,14 +1004,15 @@ function renderFocusView() {
       <div class="metric-title" style="font-size: 10px; color: var(--text-secondary); font-weight: 500;">
         <span style="color: ${tColor};">&#9632;</span> ${esc(k)}
       </div>
-      <canvas></canvas>
+      <canvas data-w="150" data-h="44" width="150" height="44"></canvas>
     `;
     thumb.onclick = () => { metricsState.focusIdx = i; renderFocusView(); };
     thumbs.appendChild(thumb);
     const tCanvas = thumb.querySelector("canvas");
-    setTimeout(() => {
+    // Use requestAnimationFrame to ensure the thumb is painted before drawing
+    requestAnimationFrame(() => {
       renderSeriesIntoCanvas(tCanvas, tSeries, xMin, xMax, tColor);
-    }, 10);
+    });
   });
 }
 
@@ -1092,8 +1108,15 @@ async function cancelSelectedJob() {
 
 async function refreshDetail() {
   if (!selectedJobId) return;
-  const job = jobsById[selectedJobId];
-  document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + selectedJobId.slice(0, 8);
+  const jobId = selectedJobId;  // snapshot to detect stale responses
+
+  // Cancel any previous in-flight fetch
+  if (detailAbortController) detailAbortController.abort();
+  detailAbortController = new AbortController();
+  const signal = detailAbortController.signal;
+
+  const job = jobsById[jobId];
+  document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + jobId.slice(0, 8);
   document.getElementById("jobSub").textContent = `Task: ${job ? job.task : "-"} | Created: ${job ? new Date(job.created_at * 1000).toLocaleString() : "-"}`;
   
   // Show / Hide cancellation button based on job status
@@ -1124,21 +1147,35 @@ async function refreshDetail() {
 
   if (usesMetrics) {
     document.getElementById("chartCaption").textContent = "structured metrics (job-declared) — hover a chart for exact values";
-    let records = [];
-    try { records = await (await api(`/v1/jobs/${selectedJobId}/metrics`)).json(); } catch (e) { records = []; }
-    drawMetricsChart(records);
   } else {
     document.getElementById("chartCaption").textContent = 'loss (best-effort, parsed from log lines containing "loss")';
   }
 
+  // Fetch metrics and logs IN PARALLEL
   try {
-    rawLogContent = await (await api(`/v1/jobs/${selectedJobId}/logs`)).text();
+    const [metricsResult, logsResult] = await Promise.all([
+      usesMetrics
+        ? fetch(API + `/v1/jobs/${jobId}/metrics`, { headers: { Authorization: "Bearer " + getToken() }, signal }).then(r => r.ok ? r.json() : [])
+        : Promise.resolve(null),
+      fetch(API + `/v1/jobs/${jobId}/logs`, { headers: { Authorization: "Bearer " + getToken() }, signal }).then(r => r.ok ? r.text() : "")
+    ]);
+
+    // Guard: discard if user switched to another job while fetching
+    if (jobId !== selectedJobId) return;
+
+    rawLogContent = logsResult;
+    filterLogs();
+
+    if (usesMetrics) {
+      drawMetricsChart(metricsResult || []);
+    } else {
+      drawLossChart(parseLossPoints(rawLogContent));
+    }
   } catch (e) {
-    rawLogContent = "(failed to load logs)";
+    if (e.name === "AbortError") return;  // intentionally cancelled, ignore
+    rawLogContent = "(failed to load)";
+    filterLogs();
   }
-  
-  filterLogs();
-  if (!usesMetrics) drawLossChart(parseLossPoints(rawLogContent));
 }
 
 async function tick() {
