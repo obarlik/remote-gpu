@@ -6,6 +6,8 @@ hardcoded in source, so any job shape the server already supports
 API. Projects snapshot a template's values at creation time rather than
 referencing it live, so editing a template never changes past projects.
 """
+from __future__ import annotations
+
 import time
 from typing import Any
 
@@ -19,7 +21,14 @@ class TemplateManager:
     def __init__(self):
         self._templates: dict[str, dict[str, Any]] = _store.load()
 
-    def create(self, name: str, task: str, defaults: dict[str, Any], required_params: list[str]) -> dict:
+    def create(
+        self,
+        name: str,
+        task: str,
+        defaults: dict[str, Any],
+        required_params: list[str],
+        capabilities: list[str],
+    ) -> dict:
         if name in self._templates:
             raise ValueError(f"template '{name}' already exists")
         record = {
@@ -27,6 +36,7 @@ class TemplateManager:
             "task": task,
             "defaults": defaults,
             "required_params": required_params,
+            "capabilities": capabilities,
             "version": 1,
             "created_at": time.time(),
             "updated_at": time.time(),
@@ -35,7 +45,13 @@ class TemplateManager:
         _store.save(self._templates)
         return record
 
-    def update(self, name: str, defaults: dict[str, Any] | None, required_params: list[str] | None) -> dict:
+    def update(
+        self,
+        name: str,
+        defaults: dict[str, Any] | None,
+        required_params: list[str] | None,
+        capabilities: list[str] | None,
+    ) -> dict:
         record = self.get(name)
         if record is None:
             raise ValueError(f"template '{name}' not found")
@@ -43,6 +59,8 @@ class TemplateManager:
             record["defaults"] = {**record["defaults"], **defaults}
         if required_params is not None:
             record["required_params"] = required_params
+        if capabilities is not None:
+            record["capabilities"] = capabilities
         record["version"] += 1
         record["updated_at"] = time.time()
         _store.save(self._templates)

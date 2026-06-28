@@ -28,7 +28,7 @@ def create_template(req: TemplateCreateRequest):
     not hardcoded job types. Any task this server supports can be wrapped
     in a template."""
     try:
-        return template_manager.create(req.name, req.task, req.defaults, req.required_params)
+        return template_manager.create(req.name, req.task, req.defaults, req.required_params, req.capabilities)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
@@ -52,7 +52,7 @@ def update_template(name: str, req: TemplateUpdateRequest):
     they snapshotted the old values at creation time. Only new projects
     pick up this change."""
     try:
-        return template_manager.update(name, req.defaults, req.required_params)
+        return template_manager.update(name, req.defaults, req.required_params, req.capabilities)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -69,7 +69,7 @@ def create_project(req: ProjectCreateRequest):
     """A project holds durable defaults (file paths, hyperparams) so later
     job submissions only need to specify what's different this run."""
     try:
-        return project_manager.create(req.name, req.template, req.task, req.defaults)
+        return project_manager.create(req.name, req.template, req.task, req.defaults, req.capabilities)
     except ValueError as exc:
         raise HTTPException(409 if "already exists" in str(exc) else 400, str(exc)) from exc
 
@@ -110,8 +110,8 @@ def submit_project_job(name: str, req: ProjectJobRequest):
     required_params before queueing — catches missing config early instead
     of failing deep inside the training script."""
     try:
-        task, final_params = project_manager.resolve_job(name, req.params)
-        job = job_queue.submit(task, final_params, project=name)
+        task, final_params, capabilities = project_manager.resolve_job(name, req.params)
+        job = job_queue.submit(task, final_params, project=name, capabilities=capabilities)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return job.to_dict()

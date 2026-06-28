@@ -38,14 +38,17 @@
   </div>
   <div class="card" style="flex:1; min-width:480px;">
     <b id="jobTitle">Select a job</b>
-    <div>loss (best-effort, parsed from log lines containing "loss")</div>
+    <div id="chartCaption"></div>
     <canvas id="chart" width="560" height="220"></canvas>
+    <div id="legend" style="font-size:12px;"></div>
     <div id="log"></div>
   </div>
 </div>
 <script>
 const API = location.origin;
 let selectedJobId = null;
+let jobsById = {};
+const SERIES_COLORS = ["#4ade80", "#60a5fa", "#facc15", "#f87171", "#a78bfa", "#34d399"];
 
 function getToken() { return localStorage.getItem("gpu_token") || ""; }
 function saveToken() { localStorage.setItem("gpu_token", document.getElementById("token").value); }
@@ -70,9 +73,11 @@ async function refreshGpu() {
 async function refreshJobs() {
   let jobs = [];
   try { jobs = await (await api("/v1/jobs")).json(); } catch (e) { return; }
+  jobsById = {};
   const body = document.querySelector("#jobs tbody");
   body.innerHTML = "";
   for (const j of jobs.slice().reverse()) {
+    jobsById[j.id] = j;
     const tr = document.createElement("tr");
     if (j.id === selectedJobId) tr.className = "selected";
     tr.innerHTML = `<td>${j.id}</td><td>${j.task}</td>` +
@@ -101,10 +106,47 @@ function parseLossPoints(logText) {
   return points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
 }
 
-function drawChart(points) {
+// records: list of {step, <key>: value, ...}. Draws one line per numeric
+// key found (excluding "step"), each its own color, with a legend.
+function drawMetricsChart(records) {
   const canvas = document.getElementById("chart");
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById("legend").innerHTML = "";
+  if (records.length < 2) {
+    ctx.fillStyle = "#888";
+    ctx.fillText("not enough data yet", 10, 20);
+    return;
+  }
+  const keys = [...new Set(records.flatMap((r) => Object.keys(r)))].filter((k) => k !== "step");
+  const xs = records.map((r) => (r.step !== undefined ? r.step : records.indexOf(r)));
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const pad = 30;
+  const sx = (x) => pad + ((x - xMin) / (xMax - xMin || 1)) * (canvas.width - 2 * pad);
+
+  keys.forEach((key, i) => {
+    const series = records.map((r, idx) => [xs[idx], r[key]]).filter((p) => typeof p[1] === "number");
+    if (series.length < 2) return;
+    const ys = series.map((p) => p[1]);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const sy = (y) => canvas.height - pad - ((y - yMin) / (yMax - yMin || 1)) * (canvas.height - 2 * pad);
+    const color = SERIES_COLORS[i % SERIES_COLORS.length];
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    series.forEach((p, idx) => (idx === 0 ? ctx.moveTo(sx(p[0]), sy(p[1])) : ctx.lineTo(sx(p[0]), sy(p[1]))));
+    ctx.stroke();
+    document.getElementById("legend").innerHTML +=
+      `<span style="color:${color}">&#9632; ${key} (${yMin.toFixed(4)} - ${yMax.toFixed(4)})</span> `;
+  });
+}
+
+// Fallback for jobs that don't declare the "metrics" capability:
+// best-effort regex over raw log text for "step N ... loss X" / "loss: X".
+function drawLossChart(points) {
+  const canvas = document.getElementById("chart");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById("legend").innerHTML = "";
   if (points.length < 2) {
     ctx.fillStyle = "#888";
     ctx.fillText("not enough data yet", 10, 20);
@@ -120,17 +162,29 @@ function drawChart(points) {
   ctx.beginPath();
   points.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p[0]), sy(p[1])) : ctx.lineTo(sx(p[0]), sy(p[1]))));
   ctx.stroke();
-  ctx.fillStyle = "#888";
-  ctx.fillText(`loss: ${yMin.toFixed(4)} - ${yMax.toFixed(4)}  |  step: ${xMin} - ${xMax}`, pad, 15);
+  document.getElementById("legend").textContent =
+    `loss: ${yMin.toFixed(4)} - ${yMax.toFixed(4)}  |  step: ${xMin} - ${xMax}`;
 }
 
 async function refreshDetail() {
   if (!selectedJobId) return;
   document.getElementById("jobTitle").textContent = "Job " + selectedJobId;
+  const job = jobsById[selectedJobId];
+  const usesMetrics = job && (job.capabilities || []).includes("metrics");
+
+  if (usesMetrics) {
+    document.getElementById("chartCaption").textContent = "structured metrics (job-declared)";
+    let records = [];
+    try { records = await (await api(`/v1/jobs/${selectedJobId}/metrics`)).json(); } catch (e) { records = []; }
+    drawMetricsChart(records);
+  } else {
+    document.getElementById("chartCaption").textContent = 'loss (best-effort, parsed from log lines containing "loss")';
+  }
+
   let logText = "";
   try { logText = await (await api(`/v1/jobs/${selectedJobId}/logs`)).text(); } catch (e) { logText = "(failed to load logs)"; }
   document.getElementById("log").textContent = logText.split("\n").slice(-50).join("\n");
-  drawChart(parseLossPoints(logText));
+  if (!usesMetrics) drawLossChart(parseLossPoints(logText));
 }
 
 async function tick() { await refreshGpu(); await refreshJobs(); await refreshDetail(); }

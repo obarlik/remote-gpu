@@ -16,11 +16,12 @@ _history = JsonStore(DATA_DIR / "jobs_history.json")
 
 
 class Job:
-    def __init__(self, task: str, params: dict[str, Any], project: str | None = None):
+    def __init__(self, task: str, params: dict[str, Any], project: str | None = None, capabilities: list[str] | None = None):
         self.id = uuid.uuid4().hex[:12]
         self.task = task
         self.params = params
         self.project = project
+        self.capabilities = capabilities or []
         self.status = "queued"
         self.created_at = time.time()
         self.started_at: float | None = None
@@ -41,6 +42,7 @@ class Job:
         job.task = record["task"]
         job.params = record["params"]
         job.project = record.get("project")
+        job.capabilities = record.get("capabilities", [])
         job.status = record["status"]
         job.created_at = record["created_at"]
         job.started_at = record.get("started_at")
@@ -57,6 +59,7 @@ class Job:
             "id": self.id,
             "task": self.task,
             "project": self.project,
+            "capabilities": self.capabilities,
             "status": self.status,
             "params": self.params,
             "created_at": self.created_at,
@@ -88,12 +91,18 @@ class JobQueue:
             self._jobs[job.id] = job
             self._order.append(job.id)
 
-    def submit(self, task: str, params: dict[str, Any], project: str | None = None) -> Job:
+    def submit(
+        self,
+        task: str,
+        params: dict[str, Any],
+        project: str | None = None,
+        capabilities: list[str] | None = None,
+    ) -> Job:
         if not is_known_task(task):
             raise ValueError(f"Unknown task '{task}'")
         if task == CUSTOM_SCRIPT_TASK and not Path(params.get("script_path", "")).is_file():
             raise ValueError("custom_script task requires an existing 'script_path' param")
-        job = Job(task, params, project)
+        job = Job(task, params, project, capabilities)
         with self._global_lock:
             self._jobs[job.id] = job
             self._order.append(job.id)

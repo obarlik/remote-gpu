@@ -1,4 +1,5 @@
 import gzip
+import json
 import shutil
 import subprocess
 import uuid
@@ -42,9 +43,14 @@ app = FastAPI(
         "keys (e.g. point at a newly uploaded dataset without re-stating "
         "everything). `PATCH /v1/jobs/{id}` assigns/moves/unassigns any "
         "job's project after the fact, even a running one. Job history, "
-        "templates, and projects all persist across server restarts."
+        "templates, and projects all persist across server restarts.\n\n"
+        "**Capabilities (declarative, not guessed):** a job/template/project "
+        "can declare `capabilities=['metrics']`, meaning its script writes "
+        "`output_dir/metrics.jsonl` (any keys, e.g. `{\"step\":10,\"loss\":0.3}`) "
+        "— `GET /v1/jobs/{id}/metrics` returns it, and the dashboard charts "
+        "every key as its own line instead of guessing from raw log text."
     ),
-    version="1.2.0",
+    version="1.3.0",
 )
 # Compresses outgoing responses (job lists, logs, file downloads) when the
 # client sends Accept-Encoding: gzip. Pure response-side, opt-in via that
@@ -180,7 +186,7 @@ def submit_job(req: JobSubmitRequest, _: None = Depends(require_token)):
     For task='custom_script', params must include 'script_path' from a prior
     /v1/files upload. Returns the job with status='queued'."""
     try:
-        job = job_queue.submit(req.task, req.params)
+        job = job_queue.submit(req.task, req.params, capabilities=req.capabilities)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return job.to_dict()
@@ -220,6 +226,26 @@ def get_job_logs(job_id: str, _: None = Depends(require_token)):
     if not job.log_path.exists():
         return ""
     return job.log_path.read_text(encoding="utf-8", errors="replace")
+
+
+@app.get("/v1/jobs/{job_id}/metrics", summary="Structured metrics, if the job declares the 'metrics' capability")
+def get_job_metrics(job_id: str, _: None = Depends(require_token)):
+    """Reads output_dir/metrics.jsonl — one JSON object per line, written by
+    the job's own script (e.g. {"step": 10, "loss": 0.3}). Any keys are
+    allowed; this endpoint doesn't interpret them, it just returns the
+    parsed records in order. Empty list if the job hasn't written any yet
+    or doesn't declare 'metrics' in its capabilities."""
+    job = job_queue.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    metrics_path = job.output_dir / "metrics.jsonl"
+    if not metrics_path.exists():
+        return []
+    records = []
+    for line in metrics_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.strip():
+            records.append(json.loads(line))
+    return records
 
 
 @app.get("/v1/jobs/{job_id}/files", summary="List files available in the job's output dir")

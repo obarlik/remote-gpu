@@ -19,6 +19,18 @@ class JobSubmitRequest(BaseModel):
         ),
         examples=[{"script_path": "C:/.../driver.py", "steps": 200}],
     )
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description=(
+            "What this job's script actually provides, declared by you — the server "
+            "never guesses. 'metrics' means it writes structured records to "
+            "output_dir/metrics.jsonl (one JSON object per line, e.g. "
+            "{\"step\": 10, \"loss\": 0.3}); the dashboard charts those directly instead "
+            "of falling back to best-effort log parsing. 'resume' means it accepts a "
+            "checkpoint path to continue training from."
+        ),
+        examples=[["metrics"]],
+    )
 
 
 class UploadInitRequest(BaseModel):
@@ -37,6 +49,7 @@ class JobInfo(BaseModel):
     id: str
     task: str
     project: str | None = None
+    capabilities: list[str] = Field(default_factory=list)
     status: JobStatus
     params: dict[str, Any]
     created_at: float
@@ -63,11 +76,17 @@ class TemplateCreateRequest(BaseModel):
         description="Param keys that must be present (from defaults or job-time overrides) before a job can start.",
         examples=[["script_path", "corpus_path"]],
     )
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description="What jobs from this template provide, e.g. ['metrics'] if the script writes metrics.jsonl.",
+        examples=[["metrics"]],
+    )
 
 
 class TemplateUpdateRequest(BaseModel):
     defaults: dict[str, Any] | None = None
     required_params: list[str] | None = None
+    capabilities: list[str] | None = None
 
 
 class TemplateInfo(BaseModel):
@@ -75,6 +94,7 @@ class TemplateInfo(BaseModel):
     task: str
     defaults: dict[str, Any]
     required_params: list[str]
+    capabilities: list[str] = Field(default_factory=list)
     version: int
     created_at: float
     updated_at: float
@@ -87,6 +107,10 @@ class ProjectCreateRequest(BaseModel):
     defaults: dict[str, Any] = Field(
         default_factory=dict,
         description="Project-specific values; override the template's snapshot on matching keys.",
+    )
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description="Used only when no template is given; otherwise snapshotted from the template.",
     )
 
 
@@ -103,6 +127,7 @@ class ProjectInfo(BaseModel):
     task: str
     defaults: dict[str, Any]
     required_params: list[str]
+    capabilities: list[str] = Field(default_factory=list)
     created_at: float
     updated_at: float
 

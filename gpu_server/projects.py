@@ -3,6 +3,8 @@ which defaults (file paths + hyperparams), optionally snapshotted from a
 template. Submitting a job against a project only needs to specify what's
 different this run — everything else is inherited.
 """
+from __future__ import annotations
+
 import time
 from typing import Any
 
@@ -17,13 +19,21 @@ class ProjectManager:
     def __init__(self):
         self._projects: dict[str, dict[str, Any]] = _store.load()
 
-    def create(self, name: str, template: str | None, task: str | None, defaults: dict[str, Any]) -> dict:
+    def create(
+        self,
+        name: str,
+        template: str | None,
+        task: str | None,
+        defaults: dict[str, Any],
+        capabilities: list[str],
+    ) -> dict:
         if name in self._projects:
             raise ValueError(f"project '{name}' already exists")
 
         resolved_task = task
         resolved_defaults: dict[str, Any] = {}
         required_params: list[str] = []
+        resolved_capabilities = capabilities
 
         if template is not None:
             tpl = template_manager.get(template)
@@ -32,6 +42,7 @@ class ProjectManager:
             resolved_task = resolved_task or tpl["task"]
             resolved_defaults = dict(tpl["defaults"])
             required_params = list(tpl["required_params"])
+            resolved_capabilities = list(tpl["capabilities"])
 
         if resolved_task is None:
             raise ValueError("task is required when no template is given")
@@ -43,6 +54,7 @@ class ProjectManager:
             "task": resolved_task,
             "defaults": resolved_defaults,
             "required_params": required_params,
+            "capabilities": resolved_capabilities,
             "created_at": time.time(),
             "updated_at": time.time(),
         }
@@ -72,9 +84,9 @@ class ProjectManager:
         _store.save(self._projects)
         return True
 
-    def resolve_job(self, name: str, overrides: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def resolve_job(self, name: str, overrides: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
         """Merge project defaults with this run's overrides and validate
-        required_params. Returns (task, final_params)."""
+        required_params. Returns (task, final_params, capabilities)."""
         record = self.get(name)
         if record is None:
             raise ValueError(f"project '{name}' not found")
@@ -82,7 +94,7 @@ class ProjectManager:
         missing = [k for k in record["required_params"] if k not in final_params]
         if missing:
             raise ValueError(f"missing required params for project '{name}': {missing}")
-        return record["task"], final_params
+        return record["task"], final_params, record["capabilities"]
 
 
 project_manager = ProjectManager()

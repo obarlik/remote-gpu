@@ -61,6 +61,24 @@ For recurring job shapes, avoid re-sending everything on every submission:
 Templates, projects, and job history all persist to JSON files under
 `data/` and survive a server restart.
 
+## Capabilities and structured metrics
+
+A job (or its template/project) can declare `"capabilities": ["metrics"]`.
+This is purely declarative — the server never guesses what a script does:
+
+- If declared, the script is expected to write `output_dir/metrics.jsonl`
+  (one JSON object per line, any keys, e.g. `{"step": 10, "loss": 0.3}`).
+  `GET /v1/jobs/{id}/metrics` returns the parsed records.
+- The dashboard checks a job's `capabilities`: if `"metrics"` is present, it
+  charts every numeric key found in the structured records as its own line
+  with a legend. Otherwise it falls back to a best-effort regex over the
+  raw log text for `"step N ... loss X"` / `"loss: X"`.
+- A `"resume"` capability is also recognized as a declaration that the
+  script accepts a checkpoint path to continue training from (informational
+  for now — no dedicated endpoint yet, since the existing pattern already
+  covers it: submit a new job/project-run with `resume_from` pointing at
+  the checkpoint).
+
 ## Dashboard
 
 `GET /dashboard` — a small browser page (no build step, vanilla JS) showing
