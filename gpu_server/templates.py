@@ -8,6 +8,8 @@ referencing it live, so editing a template never changes past projects.
 """
 from __future__ import annotations
 
+import copy
+import threading
 import time
 from typing import Any
 
@@ -19,16 +21,18 @@ _store = JsonStore(DATA_DIR / "templates.json")
 
 class TemplateManager:
     def __init__(self):
-        self._templates: dict[str, dict[str, Any]] = _store.load()
-        # Backfill records persisted before 'capabilities' existed, so old
-        # templates don't KeyError the first time a new field is read.
-        migrated = False
-        for record in self._templates.values():
-            if "capabilities" not in record:
-                record["capabilities"] = []
-                migrated = True
-        if migrated:
-            _store.save(self._templates)
+        self.lock = threading.Lock()
+        with self.lock:
+            self._templates: dict[str, dict[str, Any]] = _store.load()
+            # Backfill records persisted before 'capabilities' existed, so old
+            # templates don't KeyError the first time a new field is read.
+            migrated = False
+            for record in self._templates.values():
+                if "capabilities" not in record:
+                    record["capabilities"] = []
+                    migrated = True
+            if migrated:
+                _store.save(self._templates)
 
     def create(
         self,
@@ -38,21 +42,27 @@ class TemplateManager:
         required_params: list[str],
         capabilities: list[str],
     ) -> dict:
-        if name in self._templates:
-            raise ValueError(f"template '{name}' already exists")
-        record = {
-            "name": name,
-            "task": task,
-            "defaults": defaults,
-            "required_params": required_params,
-            "capabilities": capabilities,
-            "version": 1,
-            "created_at": time.time(),
-            "updated_at": time.time(),
-        }
-        self._templates[name] = record
-        _store.save(self._templates)
-        return record
+        # Prevent creating templates with invalid tasks early
+        from gpu_server.jobs.registry import is_known_task, CUSTOM_SCRIPT_TASK
+        if not is_known_task(task):
+            raise ValueError(f"Unknown task '{task}'. Template tasks must be known tasks or '{CUSTOM_SCRIPT_TASK}'.")
+
+        with self.lock:
+            if name in self._templates:
+                raise ValueError(f"template '{name}' already exists")
+            record = {
+                "name": name,
+                "task": task,
+                "defaults": defaults,
+                "required_params": required_params,
+                "capabilities": capabilities,
+                "version": 1,
+                "created_at": time.time(),
+                "updated_at": time.time(),
+            }
+            self._templates[name] = record
+            _store.save(self._templates)
+            return copy.deepcopy(record)
 
     def update(
         self,
@@ -61,32 +71,39 @@ class TemplateManager:
         required_params: list[str] | None,
         capabilities: list[str] | None,
     ) -> dict:
-        record = self.get(name)
-        if record is None:
-            raise ValueError(f"template '{name}' not found")
-        if defaults is not None:
-            record["defaults"] = {**record["defaults"], **defaults}
-        if required_params is not None:
-            record["required_params"] = required_params
-        if capabilities is not None:
-            record["capabilities"] = capabilities
-        record["version"] += 1
-        record["updated_at"] = time.time()
-        _store.save(self._templates)
-        return record
+        with self.lock:
+            record = self._templates.get(name)
+            if record is None:
+                raise ValueError(f"template '{name}' not found")
+            if defaults is not None:
+                record["defaults"] = {**record["defaults"], **defaults}
+            if required_params is not None:
+                record["required_params"] = required_params
+            if capabilities is not None:
+                record["capabilities"] = capabilities
+            record["version"] += 1
+            record["updated_at"] = time.time()
+            _store.save(self._templates)
+            return copy.deepcopy(record)
 
     def get(self, name: str) -> dict | None:
-        return self._templates.get(name)
+        with self.lock:
+            record = self._templates.get(name)
+            if record is None:
+                return None
+            return copy.deepcopy(record)
 
     def list(self) -> list[dict]:
-        return list(self._templates.values())
+        with self.lock:
+            return copy.deepcopy(list(self._templates.values()))
 
     def delete(self, name: str) -> bool:
-        if name not in self._templates:
-            return False
-        del self._templates[name]
-        _store.save(self._templates)
-        return True
+        with self.lock:
+            if name not in self._templates:
+                return False
+            del self._templates[name]
+            _store.save(self._templates)
+            return True
 
 
 template_manager = TemplateManager()

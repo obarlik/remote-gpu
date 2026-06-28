@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import signal
 import subprocess
 import threading
 import time
@@ -154,9 +155,27 @@ class JobQueue:
                 return True
             if job.status == "running" and job.process is not None:
                 job.status = "cancelled"
-                job.process.terminate()
+                self._terminate_process_tree(job.process)
                 return True
         return False
+
+    @staticmethod
+    def _terminate_process_tree(process: subprocess.Popen) -> None:
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
+        except Exception:
+            try:
+                process.terminate()
+            except Exception:
+                pass
 
     def _worker_loop(self) -> None:
         # Any uncaught exception here would silently kill the worker thread
@@ -194,6 +213,8 @@ class JobQueue:
         cmd = self._build_command(job, params_path)
 
         with job.lock:
+            if job.status == "cancelled":
+                return
             job.status = "running"
             job.started_at = time.time()
 
@@ -216,13 +237,16 @@ class JobQueue:
         }
 
         with open(job.log_path, "w", encoding="utf-8") as log_file:
-            job.process = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                cwd=str(job.output_dir),
-                env=child_env,
-            )
+            popen_kwargs = {
+                "stdout": log_file,
+                "stderr": subprocess.STDOUT,
+                "cwd": str(job.output_dir),
+                "env": child_env,
+            }
+            if os.name != "nt":
+                popen_kwargs["start_new_session"] = True
+
+            job.process = subprocess.Popen(cmd, **popen_kwargs)
             return_code = job.process.wait()
 
         with job.lock:

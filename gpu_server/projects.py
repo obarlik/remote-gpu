@@ -5,6 +5,8 @@ different this run — everything else is inherited.
 """
 from __future__ import annotations
 
+import copy
+import threading
 import time
 from typing import Any
 
@@ -19,16 +21,18 @@ _store = JsonStore(DATA_DIR / "projects.json")
 
 class ProjectManager:
     def __init__(self):
-        self._projects: dict[str, dict[str, Any]] = _store.load()
-        # Backfill records persisted before 'capabilities' existed, so old
-        # projects don't KeyError the first time a new field is read.
-        migrated = False
-        for record in self._projects.values():
-            if "capabilities" not in record:
-                record["capabilities"] = []
-                migrated = True
-        if migrated:
-            _store.save(self._projects)
+        self.lock = threading.Lock()
+        with self.lock:
+            self._projects: dict[str, dict[str, Any]] = _store.load()
+            # Backfill records persisted before 'capabilities' existed, so old
+            # projects don't KeyError the first time a new field is read.
+            migrated = False
+            for record in self._projects.values():
+                if "capabilities" not in record:
+                    record["capabilities"] = []
+                    migrated = True
+            if migrated:
+                _store.save(self._projects)
 
     def create(
         self,
@@ -38,62 +42,70 @@ class ProjectManager:
         defaults: dict[str, Any],
         capabilities: list[str],
     ) -> dict:
-        if name in self._projects:
-            raise ValueError(f"project '{name}' already exists")
+        with self.lock:
+            if name in self._projects:
+                raise ValueError(f"project '{name}' already exists")
 
-        resolved_task = task
-        resolved_defaults: dict[str, Any] = {}
-        required_params: list[str] = []
-        resolved_capabilities = capabilities
+            resolved_task = task
+            resolved_defaults: dict[str, Any] = {}
+            required_params: list[str] = []
+            resolved_capabilities = capabilities
 
-        if template is not None:
-            tpl = template_manager.get(template)
-            if tpl is None:
-                raise ValueError(f"template '{template}' not found")
-            resolved_task = resolved_task or tpl["task"]
-            resolved_defaults = dict(tpl["defaults"])
-            required_params = list(tpl["required_params"])
-            resolved_capabilities = list(tpl["capabilities"])
+            if template is not None:
+                tpl = template_manager.get(template)
+                if tpl is None:
+                    raise ValueError(f"template '{template}' not found")
+                resolved_task = resolved_task or tpl["task"]
+                resolved_defaults = dict(tpl["defaults"])
+                required_params = list(tpl["required_params"])
+                resolved_capabilities = list(tpl["capabilities"])
 
-        if resolved_task is None:
-            raise ValueError("task is required when no template is given")
+            if resolved_task is None:
+                raise ValueError("task is required when no template is given")
 
-        resolved_defaults.update(defaults)  # project-specific values win over template snapshot
-        record = {
-            "name": name,
-            "template": template,
-            "task": resolved_task,
-            "defaults": resolved_defaults,
-            "required_params": required_params,
-            "capabilities": resolved_capabilities,
-            "created_at": time.time(),
-            "updated_at": time.time(),
-        }
-        self._projects[name] = record
-        _store.save(self._projects)
-        return record
+            resolved_defaults.update(defaults)  # project-specific values win over template snapshot
+            record = {
+                "name": name,
+                "template": template,
+                "task": resolved_task,
+                "defaults": resolved_defaults,
+                "required_params": required_params,
+                "capabilities": resolved_capabilities,
+                "created_at": time.time(),
+                "updated_at": time.time(),
+            }
+            self._projects[name] = record
+            _store.save(self._projects)
+            return copy.deepcopy(record)
 
     def update_defaults(self, name: str, defaults: dict[str, Any]) -> dict:
-        record = self.get(name)
-        if record is None:
-            raise ValueError(f"project '{name}' not found")
-        record["defaults"] = {**record["defaults"], **defaults}
-        record["updated_at"] = time.time()
-        _store.save(self._projects)
-        return record
+        with self.lock:
+            record = self._projects.get(name)
+            if record is None:
+                raise ValueError(f"project '{name}' not found")
+            record["defaults"] = {**record["defaults"], **defaults}
+            record["updated_at"] = time.time()
+            _store.save(self._projects)
+            return copy.deepcopy(record)
 
     def get(self, name: str) -> dict | None:
-        return self._projects.get(name)
+        with self.lock:
+            record = self._projects.get(name)
+            if record is None:
+                return None
+            return copy.deepcopy(record)
 
     def list(self) -> list[dict]:
-        return list(self._projects.values())
+        with self.lock:
+            return copy.deepcopy(list(self._projects.values()))
 
     def delete(self, name: str) -> bool:
-        if name not in self._projects:
-            return False
-        del self._projects[name]
-        _store.save(self._projects)
-        return True
+        with self.lock:
+            if name not in self._projects:
+                return False
+            del self._projects[name]
+            _store.save(self._projects)
+            return True
 
     def list_files(self, name: str) -> list[dict[str, Any]]:
         """Surfaces which of a project's defaults are actual files on disk —

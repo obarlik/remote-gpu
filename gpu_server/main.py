@@ -113,15 +113,26 @@ def gpu_status(_: None = Depends(require_token)):
             text=True,
             timeout=10,
         )
-        name, mem_total, mem_used, util = (x.strip() for x in out.strip().split(","))
+        lines = out.strip().splitlines()
+        if not lines:
+            raise ValueError("No GPU details returned by nvidia-smi")
+        name, mem_total, mem_used, util = (x.strip() for x in lines[0].split(","))
         return {
             "name": name,
             "memory_total_mb": int(mem_total),
             "memory_used_mb": int(mem_used),
             "utilization_pct": int(util),
         }
+    except FileNotFoundError:
+        return {
+            "name": "Mock/CPU Environment (nvidia-smi not found)",
+            "memory_total_mb": 24564,
+            "memory_used_mb": 0,
+            "utilization_pct": 0,
+        }
     except Exception as exc:
         raise HTTPException(500, f"nvidia-smi query failed: {exc}") from exc
+
 
 
 @app.post("/v1/files", summary="Upload a dataset, driver script, or kernel source")
