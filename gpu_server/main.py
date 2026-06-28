@@ -15,6 +15,7 @@ from gpu_server.projects import project_manager
 from gpu_server.queue_manager import job_queue
 from gpu_server.routes_lab import router as lab_router
 from gpu_server.schemas import JobInfo, JobMoveRequest, JobSubmitRequest, UploadInitRequest
+from gpu_server.server_info import FEATURES, VERSION
 from gpu_server.uploads import upload_manager
 
 app = FastAPI(
@@ -59,9 +60,18 @@ app = FastAPI(
         "its params (a checkpoint path) and continues training from it if "
         "present — fixed convention, same idea as `metrics.jsonl`. To resume "
         "a run, submit a new job/project-run with `{\"resume_from\": "
-        "\"<checkpoint path>\", ...}` in params."
+        "\"<checkpoint path>\", ...}` in params.\n\n"
+        "**Labeling and discoverability:** `task` is a fixed dispatch "
+        "directive, not a description — set `\"label\"` on `POST /v1/jobs` "
+        "or `POST /v1/projects/{name}/jobs` to give a run a free-form, "
+        "human-readable name (e.g. `\"scaleup d640 attempt 3\"`), shown in "
+        "job listings and the dashboard instead of everyone just seeing "
+        "`custom_script`. `GET /v1/server-info` returns the server's "
+        "version and a list of feature flags, so a client can check what's "
+        "supported in one request instead of re-parsing this description "
+        "after every update."
     ),
-    version="1.3.0",
+    version=VERSION,
 )
 # Compresses outgoing responses (job lists, logs, file downloads) when the
 # client sends Accept-Encoding: gzip. Pure response-side, opt-in via that
@@ -71,6 +81,15 @@ app.include_router(lab_router)
 
 
 _DASHBOARD_HTML = (Path(__file__).resolve().parent / "static" / "dashboard.html").read_text(encoding="utf-8")
+
+
+@app.get("/v1/server-info", summary="Server version and supported feature flags")
+def server_info():
+    """Lets a client check what this server supports in one request instead
+    of guessing from a version number or re-reading docs after every
+    update. New entries only ever get appended to 'features' — never
+    renamed or removed — so a client can safely check for one by name."""
+    return {"version": VERSION, "features": FEATURES}
 
 
 @app.get("/dashboard", response_class=HTMLResponse, summary="Web UI: job list, status, and a best-effort loss chart")

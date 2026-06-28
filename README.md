@@ -117,6 +117,9 @@ API doesn't already expose.
 
 ## Endpoints
 
+- `GET /v1/server-info` — version + a list of feature flags, so a client
+  can check what's supported in one request. Flags are only ever appended,
+  never renamed or removed, so checking for one by name is safe long-term.
 - `GET /v1/gpu` — name, VRAM, utilization (via `nvidia-smi`)
 - `POST /v1/files` — upload a dataset, driver script, or kernel source in
   one shot. `?gzip_encoded=true` decompresses the body on arrival — use
@@ -132,12 +135,18 @@ API doesn't already expose.
   as `/v1/files`, set at session start.
 - `POST /v1/jobs` — submit a job, returns job id
 - `GET /v1/jobs` / `GET /v1/jobs/{id}` — list / inspect status
+- `PATCH /v1/jobs/{id}` — assign/move/unassign a job's project
+  (`{"project": "<name>" | null}`); see "Templates and projects" above
 - `GET /v1/jobs/{id}/logs` — full stdout/stderr so far
+- `GET /v1/jobs/{id}/metrics` — structured records if the job declared the
+  `metrics` capability; see "Capabilities and structured metrics" above
 - `GET /v1/jobs/{id}/files` — list output files a job produced (name + size)
 - `GET /v1/jobs/{id}/files/{filename}` — download a result file (e.g.
   checkpoint). Supports `Range` requests, so a dropped download can resume
   instead of restarting.
 - `DELETE /v1/jobs/{id}` — cancel a queued or running job
+- Template/project endpoints (`/v1/templates*`, `/v1/projects*`) are listed
+  in "Templates and projects" above, not repeated here.
 
 All endpoints require `Authorization: Bearer <GPU_SERVER_TOKEN>`.
 
