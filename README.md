@@ -53,6 +53,10 @@ For recurring job shapes, avoid re-sending everything on every submission:
   deltas (`{"params": {...}}`); merged with the project's defaults, with
   `required_params` validated before queueing.
 - `GET /v1/projects/{name}/jobs` — every run submitted under this project.
+- `GET /v1/projects/{name}/files` — which of the project's `defaults` are
+  actual files on disk (path + size), e.g. `corpus_path`/`script_path` —
+  not plain hyperparams like `steps`/`lr`. These are exactly what every
+  job under the project inherits unless overridden.
 - `PATCH /v1/jobs/{id}` — assign, move, or unassign any job's project after
   the fact (`{"project": "<name>" | null}`), even one that's still running
   or was submitted without a project. Safe at any time: the project field
@@ -60,6 +64,18 @@ For recurring job shapes, avoid re-sending everything on every submission:
 
 Templates, projects, and job history all persist to JSON files under
 `data/` and survive a server restart.
+
+**File scope is per-job, never global.** There's no "latest artifact"
+registry and no automatic sharing between jobs — a job's outputs live only
+in its own `output_dir`, found via `GET /v1/jobs/{id}/files`. If a new job
+should use a previous job's output (a freshly built corpus, a checkpoint,
+...), you carry the path forward explicitly: either pass it directly in
+`params`, or — for a recurring project — `PATCH /v1/projects/{name}` with
+that absolute path in `defaults` so every future run under that project
+picks it up automatically. Nothing happens implicitly — but once a file is
+shared at the project level this way, it *is* visible to that project's
+jobs (and to you, via `GET /v1/projects/{name}/files`) without re-stating
+it on every submission.
 
 ## Capabilities and structured metrics
 

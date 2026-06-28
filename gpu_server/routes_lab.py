@@ -87,6 +87,18 @@ def get_project(name: str):
     return project
 
 
+@router.get("/v1/projects/{name}/files", summary="List files shared across this project's jobs")
+def list_project_files(name: str):
+    """Scans the project's defaults for values that are real file paths on
+    disk (e.g. corpus_path, tokenizer_path, script_path) — these are what
+    every job submitted under this project inherits unless overridden.
+    Pure params (steps, lr, ...) aren't included."""
+    try:
+        return project_manager.list_files(name)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.patch("/v1/projects/{name}", response_model=ProjectInfo, summary="Partially update a project's defaults")
 def update_project(name: str, req: ProjectUpdateRequest):
     """Only the given keys change — e.g. {"corpus_path": "<new path>"} after

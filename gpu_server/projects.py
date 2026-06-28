@@ -8,6 +8,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from pathlib import Path
+
 from gpu_server.config import DATA_DIR
 from gpu_server.store import JsonStore
 from gpu_server.templates import template_manager
@@ -83,6 +85,19 @@ class ProjectManager:
         del self._projects[name]
         _store.save(self._projects)
         return True
+
+    def list_files(self, name: str) -> list[dict[str, Any]]:
+        """Surfaces which of a project's defaults are actual files on disk —
+        these are what every job under the project inherits and shares,
+        as opposed to plain hyperparam values."""
+        record = self.get(name)
+        if record is None:
+            raise ValueError(f"project '{name}' not found")
+        files = []
+        for param, value in record["defaults"].items():
+            if isinstance(value, str) and Path(value).is_file():
+                files.append({"param": param, "path": value, "size_bytes": Path(value).stat().st_size})
+        return files
 
     def resolve_job(self, name: str, overrides: dict[str, Any]) -> tuple[str, dict[str, Any], list[str]]:
         """Merge project defaults with this run's overrides and validate
