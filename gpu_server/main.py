@@ -48,7 +48,12 @@ app = FastAPI(
         "can declare `capabilities=['metrics']`, meaning its script writes "
         "`output_dir/metrics.jsonl` (any keys, e.g. `{\"step\":10,\"loss\":0.3}`) "
         "— `GET /v1/jobs/{id}/metrics` returns it, and the dashboard charts "
-        "every key as its own line instead of guessing from raw log text."
+        "every key as its own line instead of guessing from raw log text. "
+        "Declaring `'resume'` means the script reads a `resume_from` key from "
+        "its params (a checkpoint path) and continues training from it if "
+        "present — fixed convention, same idea as `metrics.jsonl`. To resume "
+        "a run, submit a new job/project-run with `{\"resume_from\": "
+        "\"<checkpoint path>\", ...}` in params."
     ),
     version="1.3.0",
 )

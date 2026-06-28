@@ -26,8 +26,10 @@ class JobSubmitRequest(BaseModel):
             "never guesses. 'metrics' means it writes structured records to "
             "output_dir/metrics.jsonl (one JSON object per line, e.g. "
             "{\"step\": 10, \"loss\": 0.3}); the dashboard charts those directly instead "
-            "of falling back to best-effort log parsing. 'resume' means it accepts a "
-            "checkpoint path to continue training from."
+            "of falling back to best-effort log parsing. 'resume' means the script reads "
+            "a 'resume_from' key from its params (a checkpoint path) and continues "
+            "training from it if present — this is the fixed convention, the same way "
+            "'metrics' always means output_dir/metrics.jsonl."
         ),
         examples=[["metrics"]],
     )

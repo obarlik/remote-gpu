@@ -73,11 +73,13 @@ This is purely declarative — the server never guesses what a script does:
   charts every numeric key found in the structured records as its own line
   with a legend. Otherwise it falls back to a best-effort regex over the
   raw log text for `"step N ... loss X"` / `"loss: X"`.
-- A `"resume"` capability is also recognized as a declaration that the
-  script accepts a checkpoint path to continue training from (informational
-  for now — no dedicated endpoint yet, since the existing pattern already
-  covers it: submit a new job/project-run with `resume_from` pointing at
-  the checkpoint).
+- `"resume"` is a fixed convention too: it declares that the script reads a
+  `resume_from` key from its params (a checkpoint path) and continues
+  training from it if present. There's no dedicated endpoint for this —
+  resuming just means submitting a new job/project-run with
+  `{"resume_from": "<checkpoint path>", ...}` in `params`. A script must
+  actually implement reading `resume_from` for this to do anything; the
+  capability declaration only tells callers it's safe to try.
 
 ## Dashboard
 
