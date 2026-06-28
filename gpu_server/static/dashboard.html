@@ -915,7 +915,10 @@ async function refreshJobs() {
         const job = jobsById[selectedJobId];
         document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + selectedJobId.slice(0, 8);
         document.getElementById("jobSub").textContent = `Task: ${job ? job.task : "-"} | Status: ${job ? job.status : "-"}`;
-        document.getElementById("logLinesContainer").innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Loading...</div>';
+        const logContainer = document.getElementById("logLinesContainer") || document.getElementById("log");
+        if (logContainer) {
+          logContainer.innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Loading...</div>';
+        }
         document.getElementById("metricsGrid").innerHTML = "";
         rawLogContent = "";
       }
@@ -1318,11 +1321,13 @@ function highlightTerminalLogs(text) {
 }
 
 function filterLogs() {
-  const container = document.getElementById("logLinesContainer");
-  container.innerHTML = highlightTerminalLogs(rawLogContent) || '<div style="color: var(--text-secondary)">No logs matches the filter query.</div>';
+  const container = document.getElementById("logLinesContainer") || document.getElementById("log");
+  if (container) {
+    container.innerHTML = highlightTerminalLogs(rawLogContent) || '<div style="color: var(--text-secondary)">No logs matches the filter query.</div>';
+  }
   
   const terminal = document.getElementById("log");
-  if (autoscroll) {
+  if (terminal && autoscroll) {
     terminal.scrollTop = terminal.scrollHeight;
   }
 }
@@ -1609,7 +1614,9 @@ async function refreshDetail(fromTick = false) {
     
     // Manage Load More button visibility
     const loadBtn = document.getElementById("loadMoreLogsBtn");
-    loadBtn.style.display = hasMoreLogs ? "block" : "none";
+    if (loadBtn) {
+      loadBtn.style.display = hasMoreLogs ? "block" : "none";
+    }
 
     if (usesMetrics) {
       drawMetricsChart(metricsResult || []);
