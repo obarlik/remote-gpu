@@ -2,7 +2,7 @@
 clients can discover what's supported via GET /v1/server-info instead of
 guessing from a version number or re-reading the docs after every change."""
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 FEATURES = [
     "custom_script_task",
@@ -21,4 +21,7 @@ FEATURES = [
     "job_labels",
     "dashboard_ui",
     "server_info_endpoint",
+    "log_pagination",
+    "enhanced_gpu_monitoring",
+    "artifact_browser",
 ]

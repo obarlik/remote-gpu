@@ -155,3 +155,32 @@ class ProjectJobRequest(BaseModel):
         default_factory=dict,
         description="This run's deltas only — merged on top of the project's defaults.",
     )
+
+
+class JobLogsResponse(BaseModel):
+    lines: list[str] = Field(..., description="List of log lines in the requested chunk.")
+    next_cursor: int | None = Field(
+        None,
+        description="Byte offset to use as 'cursor' in the next request to fetch older logs. Null if no more logs.",
+    )
+    total_bytes: int = Field(..., description="Total size of the log file in bytes.")
+    has_more: bool = Field(..., description="True if there are older log lines available before this chunk.")
+
+
+class GPUStatusResponse(BaseModel):
+    name: str = Field(..., description="GPU model name.")
+    memory_total_mb: int = Field(..., description="Total VRAM in MB.")
+    memory_used_mb: int = Field(..., description="Used VRAM in MB.")
+    utilization_pct: int = Field(..., description="GPU core utilization percent.")
+    temperature_c: int | None = Field(None, description="GPU temperature in Celsius (null if unavailable).")
+    fan_speed_pct: int | None = Field(None, description="GPU fan speed percent (null if unavailable).")
+    power_draw_w: float | None = Field(None, description="Current power draw in Watts (null if unavailable).")
+    power_limit_w: float | None = Field(None, description="GPU power limit in Watts (null if unavailable).")
+
+
+class JobFileInfoExtended(BaseModel):
+    filename: str = Field(..., description="Name of the file.")
+    size_bytes: int = Field(..., description="File size in bytes.")
+    mime_type: str = Field(..., description="Detected MIME type of the file for rendering previews.")
+    modified_at: float = Field(..., description="Last modification timestamp.")
+

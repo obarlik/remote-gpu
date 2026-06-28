@@ -447,6 +447,170 @@
     display: inline-block;
   }
 
+  /* Tab System */
+  .tab-container {
+    display: flex;
+    flex-direction: column;
+    background: #09070f;
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .tab-header {
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 16px;
+  }
+  .tab-buttons {
+    display: flex;
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    padding: 14px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .tab-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.01);
+  }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-content {
+    display: none;
+  }
+  .tab-content.active {
+    display: block;
+  }
+
+  /* File Browser Table */
+  .file-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .file-table th {
+    padding: 10px 16px;
+    font-size: 10px;
+  }
+  .file-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  }
+  .file-row:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .file-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+  }
+  .file-icon {
+    font-size: 16px;
+  }
+
+  /* Lightbox Modal */
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(10, 8, 16, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .modal-box {
+    background: #171322;
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    transform: scale(0.95);
+    transition: transform 0.3s ease;
+    overflow: hidden;
+  }
+  .modal-overlay.active .modal-box {
+    transform: scale(1);
+  }
+  .modal-title-bar {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-body pre {
+    width: 100%;
+    margin: 0;
+    background: #09070f;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid var(--panel-border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #dfdae8;
+  }
+  .modal-body img {
+    max-width: 100%;
+    max-height: 55vh;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+
+  /* GPU Extra Monitor Pills */
+  .gpu-stats-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+  .gpu-sub-pill {
+    background: rgba(255, 255, 255, 0.03);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
   @media (max-width: 1100px) {
     .workspace {
       grid-template-columns: 1fr;
@@ -484,6 +648,14 @@
           <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
         </div>
       </span>
+    </div>
+    <div class="gpu-stat-pill">
+      <span class="gpu-stat-label">Hardware Health</span>
+      <div class="gpu-stats-row">
+        <span class="gpu-sub-pill" id="gpuTemp" title="Temperature">🔥 --°C</span>
+        <span class="gpu-sub-pill" id="gpuFan" title="Fan Speed">🌀 --%</span>
+        <span class="gpu-sub-pill" id="gpuPower" title="Power Draw / Limit">⚡ -- / -- W</span>
+      </div>
     </div>
   </div>
 
@@ -556,21 +728,76 @@
       <div class="chart-tooltip" id="defaultTooltip"></div>
     </div>
 
-    <!-- Custom Terminal Logs viewer -->
-    <div class="terminal-section">
-      <div class="terminal-header">
-        <span style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
-          <span class="pulse-indicator" style="background: var(--accent);"></span> Console Output
-        </span>
-        <div class="terminal-controls">
+    <!-- Tab container for Logs & Files -->
+    <div class="tab-container">
+      <div class="tab-header">
+        <div class="tab-buttons">
+          <button class="tab-btn active" onclick="switchSubTab('logs')">Console Output</button>
+          <button class="tab-btn" onclick="switchSubTab('files')">Output Files</button>
+        </div>
+        
+        <!-- Controls for Logs Tab -->
+        <div class="terminal-controls" id="logTabControls">
           <input type="text" id="logSearch" class="terminal-search" placeholder="Filter logs..." oninput="filterLogs()">
           <button id="autoscrollBtn" class="terminal-btn active" onclick="toggleAutoscroll()">Scroll Lock</button>
           <button class="terminal-btn" onclick="downloadLogs()">Download</button>
         </div>
+
+        <!-- Controls for Files Tab -->
+        <div class="terminal-controls" id="fileTabControls" style="display: none;">
+          <button class="terminal-btn" onclick="refreshJobFiles()">🔄 Refresh Files</button>
+        </div>
       </div>
-      <div class="terminal-body" id="log">Select a job to view stdout/stderr logs...</div>
+
+      <!-- Tab Content: Logs -->
+      <div id="tabContentLogs" class="tab-content active">
+        <div class="terminal-body" id="log" style="height: 300px; display: flex; flex-direction: column;">
+          <!-- Load older logs indicator -->
+          <button id="loadMoreLogsBtn" class="terminal-btn" style="display: none; margin: 0 auto 12px auto; background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); color: var(--text-secondary); width: 100%; max-width: 250px; text-align: center;" onclick="loadMoreLogs()">
+            ⬆️ Load older logs...
+          </button>
+          <div id="logLinesContainer" style="flex: 1;">Select a job to view stdout/stderr logs...</div>
+        </div>
+      </div>
+
+      <!-- Tab Content: Files -->
+      <div id="tabContentFiles" class="tab-content">
+        <div style="max-height: 300px; overflow-y: auto; background: #09070f;">
+          <table class="file-table" id="fileListTable">
+            <thead>
+              <tr>
+                <th style="text-align: left;">File Name</th>
+                <th style="text-align: right;">Size</th>
+                <th style="text-align: left; padding-left: 24px;">Type</th>
+                <th style="text-align: right;">Modified At</th>
+                <th style="text-align: center; width: 100px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="fileListBody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 20px;">
+                  Select a job to view output files.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </section>
+</div>
+
+<!-- Lightbox / Preview Modal Overlay -->
+<div class="modal-overlay" id="previewModal" onclick="closePreviewModal()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-title-bar">
+      <h3 id="modalTitle" style="font-size: 14px; font-weight: 600;">File Preview</h3>
+      <button class="terminal-btn" onclick="closePreviewModal()">Close</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <!-- Dynamic Preview Content -->
+    </div>
+  </div>
 </div>
 
 <script>
@@ -582,6 +809,12 @@ let rawLogContent = "";
 let detailAbortController = null;  // cancels stale fetches on job switch
 let detailFetchInProgress = false; // prevents tick() from clobbering user-triggered fetches
 const SERIES_COLORS = ["#03dac6", "#bb86fc", "#facc15", "#cf6679", "#3700b3", "#018786"];
+
+// Subtab & Log page state
+let activeSubTab = "logs";
+let currentLogCursor = null;
+let hasMoreLogs = false;
+const LOG_PAGE_LIMIT = 200;
 
 function getToken() { return localStorage.getItem("gpu_token") || ""; }
 function saveToken() {
@@ -621,12 +854,24 @@ async function refreshGpu() {
     document.getElementById("gpuVram").textContent = `${gpu.memory_used_mb} / ${gpu.memory_total_mb} MB`;
     const vramPct = (gpu.memory_used_mb / gpu.memory_total_mb) * 100;
     document.getElementById("gpuVramBar").style.width = vramPct + "%";
+    
+    // Hardware health sub-pills
+    document.getElementById("gpuTemp").textContent = gpu.temperature_c !== null ? `🔥 ${gpu.temperature_c}°C` : "🔥 --°C";
+    document.getElementById("gpuFan").textContent = gpu.fan_speed_pct !== null ? `🌀 ${gpu.fan_speed_pct}%` : "🌀 --%";
+    
+    const powerDraw = gpu.power_draw_w !== null ? gpu.power_draw_w.toFixed(0) : "--";
+    const powerLimit = gpu.power_limit_w !== null ? gpu.power_limit_w.toFixed(0) : "--";
+    document.getElementById("gpuPower").textContent = `⚡ ${powerDraw} / ${powerLimit} W`;
   } catch (e) {
     document.getElementById("gpuName").textContent = "(GPU status unavailable)";
     document.getElementById("gpuUtil").textContent = "0%";
     document.getElementById("gpuUtilBar").style.width = "0%";
     document.getElementById("gpuVram").textContent = "0 / 0 MB";
     document.getElementById("gpuVramBar").style.width = "0%";
+    
+    document.getElementById("gpuTemp").textContent = "🔥 --°C";
+    document.getElementById("gpuFan").textContent = "🌀 --%";
+    document.getElementById("gpuPower").textContent = "⚡ -- / -- W";
   }
 }
 
@@ -1051,13 +1296,10 @@ function drawLossChart(points) {
 // Log view: Colorize terms, search and filter logs dynamically
 function highlightTerminalLogs(text) {
   const searchVal = document.getElementById("logSearch").value.toLowerCase();
-  const lines = text.split("\n");
-  
-  // Slicing last 100 lines if no search is active to keep UI smooth and performant
-  const displayedLines = searchVal ? lines : lines.slice(-100);
+  const lines = typeof text === "string" ? text.split("\n") : text;
   const output = [];
 
-  for (let line of displayedLines) {
+  for (let line of lines) {
     if (searchVal && !line.toLowerCase().includes(searchVal)) continue;
 
     // Escaping to prevent HTML insertion
@@ -1076,8 +1318,10 @@ function highlightTerminalLogs(text) {
 }
 
 function filterLogs() {
+  const container = document.getElementById("logLinesContainer");
+  container.innerHTML = highlightTerminalLogs(rawLogContent) || '<div style="color: var(--text-secondary)">No logs matches the filter query.</div>';
+  
   const terminal = document.getElementById("log");
-  terminal.innerHTML = highlightTerminalLogs(rawLogContent) || '<div style="color: var(--text-secondary)">No logs matches the filter query.</div>';
   if (autoscroll) {
     terminal.scrollTop = terminal.scrollHeight;
   }
@@ -1094,12 +1338,183 @@ function toggleAutoscroll() {
 }
 
 function downloadLogs() {
-  if (!selectedJobId || !rawLogContent) return;
-  const blob = new Blob([rawLogContent], { type: "text/plain;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `job_${selectedJobId}_logs.txt`;
-  a.click();
+  if (!selectedJobId) return;
+  // Trigger a full log download from the backend without pagination
+  const token = getToken();
+  const url = API + `/v1/jobs/${selectedJobId}/logs`;
+  
+  fetch(url, { headers: { Authorization: "Bearer " + token } })
+    .then(r => r.text())
+    .then(text => {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `job_${selectedJobId}_logs.txt`;
+      a.click();
+    })
+    .catch(err => alert("Failed to download logs: " + err.message));
+}
+
+// Sub-Tab Switching Logic
+function switchSubTab(tabName) {
+  activeSubTab = tabName;
+  
+  // Update button active state
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.classList.remove("active");
+    if (btn.textContent.toLowerCase().includes(tabName)) {
+      btn.classList.add("active");
+    }
+  });
+  
+  // Show / Hide content panes
+  document.getElementById("tabContentLogs").classList.remove("active");
+  document.getElementById("tabContentFiles").classList.remove("active");
+  
+  document.getElementById("logTabControls").style.display = "none";
+  document.getElementById("fileTabControls").style.display = "none";
+  
+  if (tabName === "logs") {
+    document.getElementById("tabContentLogs").classList.add("active");
+    document.getElementById("logTabControls").style.display = "flex";
+  } else if (tabName === "files") {
+    document.getElementById("tabContentFiles").classList.add("active");
+    document.getElementById("fileTabControls").style.display = "flex";
+    refreshJobFiles();
+  }
+}
+
+// Load older logs backwards (pagination)
+async function loadMoreLogs() {
+  if (!selectedJobId || !currentLogCursor || !hasMoreLogs) return;
+  
+  const loadBtn = document.getElementById("loadMoreLogsBtn");
+  loadBtn.textContent = "⌛ Loading older logs...";
+  loadBtn.disabled = true;
+  
+  try {
+    const res = await api(`/v1/jobs/${selectedJobId}/logs?limit=${LOG_PAGE_LIMIT}&cursor=${currentLogCursor}`);
+    const data = await res.json();
+    
+    // Save scroll metrics to lock the scroll position after inserting content
+    const terminal = document.getElementById("log");
+    const oldScrollHeight = terminal.scrollHeight;
+    
+    // Prepend new lines to rawLogContent array
+    rawLogContent = data.lines.concat(rawLogContent);
+    currentLogCursor = data.next_cursor;
+    hasMoreLogs = data.has_more;
+    
+    // Re-render
+    filterLogs();
+    
+    // Keep scroll position relative to the content we were looking at
+    terminal.scrollTop = terminal.scrollHeight - oldScrollHeight;
+  } catch (e) {
+    alert("Failed to load older logs: " + e.message);
+  } finally {
+    loadBtn.disabled = false;
+    loadBtn.textContent = "⬆️ Load older logs...";
+    loadBtn.style.display = hasMoreLogs ? "block" : "none";
+  }
+}
+
+// Fetch files list and populate the table
+async function refreshJobFiles() {
+  if (!selectedJobId) return;
+  const tbody = document.getElementById("fileListBody");
+  tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 20px;">Loading output directory files...</td></tr>`;
+  
+  try {
+    const res = await api(`/v1/jobs/${selectedJobId}/files`);
+    const files = await res.json();
+    tbody.innerHTML = "";
+    
+    if (files.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 20px;">No files found in output directory.</td></tr>`;
+      return;
+    }
+    
+    files.forEach(file => {
+      const tr = document.createElement("tr");
+      tr.className = "file-row";
+      
+      // Determine file icon based on mime type or extensions
+      let icon = "📄";
+      if (file.mime_type.startsWith("image/")) icon = "🖼️";
+      else if (file.filename.includes("checkpoint") || file.filename.endsWith(".pt") || file.filename.endsWith(".pth")) icon = "💾";
+      else if (file.filename.endsWith(".json") || file.filename.endsWith(".jsonl")) icon = "📊";
+      else if (file.filename.endsWith(".py") || file.filename.endsWith(".sh")) icon = "⚙️";
+      
+      // Format file size
+      let sizeStr = file.size_bytes + " B";
+      if (file.size_bytes > 1024 * 1024) sizeStr = (file.size_bytes / (1024 * 1024)).toFixed(2) + " MB";
+      else if (file.size_bytes > 1024) sizeStr = (file.size_bytes / 1024).toFixed(1) + " KB";
+      
+      const mtimeStr = new Date(file.modified_at * 1000).toLocaleString();
+      
+      // File preview capability check
+      const canPreview = file.mime_type.startsWith("image/") || file.mime_type.startsWith("text/") || file.filename.endsWith(".json") || file.filename.endsWith(".jsonl");
+      const previewBtnHtml = canPreview 
+        ? `<button class="terminal-btn" onclick="previewFile('${esc(file.filename)}', '${file.mime_type}')" style="padding: 2px 8px; font-size:10px; margin-right: 4px;">View</button>`
+        : "";
+        
+      tr.innerHTML = `
+        <td>
+          <div class="file-name-cell">
+            <span class="file-icon">${icon}</span>
+            <span>${esc(file.filename)}</span>
+          </div>
+        </td>
+        <td style="text-align: right; font-family: monospace;">${sizeStr}</td>
+        <td style="color: var(--text-secondary); padding-left: 24px;">${esc(file.mime_type)}</td>
+        <td style="text-align: right; color: var(--text-secondary);">${mtimeStr}</td>
+        <td style="text-align: center;">
+          ${previewBtnHtml}
+          <a class="terminal-btn" href="${API}/v1/jobs/${selectedJobId}/files/${esc(file.filename)}?Authorization=Bearer+${getToken()}" target="_blank" download style="padding: 2px 8px; font-size:10px; text-decoration: none;">Get</a>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--status-failed); padding: 20px;">Failed to load files: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+// Lightbox modal previewer for logs, code, text outputs, and image checkpoints
+async function previewFile(filename, mimeType) {
+  const modal = document.getElementById("previewModal");
+  const title = document.getElementById("modalTitle");
+  const body = document.getElementById("modalBody");
+  
+  title.textContent = `Preview: ${filename}`;
+  body.innerHTML = `<div style="color: var(--text-secondary)">Loading file contents...</div>`;
+  modal.classList.add("active");
+  
+  const fileUrl = `${API}/v1/jobs/${selectedJobId}/files/${filename}`;
+  const token = getToken();
+  
+  try {
+    if (mimeType.startsWith("image/")) {
+      // Preview Image
+      const res = await fetch(fileUrl, { headers: { Authorization: "Bearer " + token } });
+      const blob = await res.blob();
+      const imgUrl = URL.createObjectURL(blob);
+      body.innerHTML = `<img src="${imgUrl}" alt="${filename}">`;
+    } else {
+      // Preview Text/JSON
+      const res = await fetch(fileUrl, { headers: { Authorization: "Bearer " + token } });
+      const text = await res.text();
+      body.innerHTML = `<pre>${esc(text.slice(0, 100000))}${text.length > 100000 ? "\n\n... (truncated due to large file size) ..." : ""}</pre>`;
+    }
+  } catch (e) {
+    body.innerHTML = `<div style="color: var(--status-failed)">Failed to load preview: ${esc(e.message)}</div>`;
+  }
+}
+
+function closePreviewModal() {
+  const modal = document.getElementById("previewModal");
+  modal.classList.remove("active");
 }
 
 async function cancelSelectedJob() {
@@ -1164,29 +1579,51 @@ async function refreshDetail(fromTick = false) {
     document.getElementById("chartCaption").textContent = 'loss (best-effort, parsed from log lines containing "loss")';
   }
 
+  // If this is a new job selection (not a tick refresh), reset log pagination cursors
+  if (!fromTick) {
+    currentLogCursor = null;
+    hasMoreLogs = false;
+    // Switch back to Logs tab on job switch
+    switchSubTab("logs");
+  }
+
   // Fetch metrics and logs IN PARALLEL
   try {
     const [metricsResult, logsResult] = await Promise.all([
       usesMetrics
         ? fetch(API + `/v1/jobs/${jobId}/metrics`, { headers: { Authorization: "Bearer " + getToken() }, signal }).then(r => r.ok ? r.json() : [])
         : Promise.resolve(null),
-      fetch(API + `/v1/jobs/${jobId}/logs`, { headers: { Authorization: "Bearer " + getToken() }, signal }).then(r => r.ok ? r.text() : "")
+      // Paginated logs fetch: request logLimit lines backwards
+      fetch(API + `/v1/jobs/${jobId}/logs?limit=${LOG_PAGE_LIMIT}${currentLogCursor ? `&cursor=${currentLogCursor}` : ""}`, { headers: { Authorization: "Bearer " + getToken() }, signal }).then(r => r.ok ? r.json() : {"lines": [], "next_cursor": null, "has_more": false})
     ]);
 
     // Guard: discard if user switched to another job while fetching
     if (jobId !== selectedJobId) { detailFetchInProgress = false; return; }
 
-    rawLogContent = logsResult;
+    // Parse paginated log response
+    rawLogContent = logsResult.lines;
+    currentLogCursor = logsResult.next_cursor;
+    hasMoreLogs = logsResult.has_more;
+
     filterLogs();
+    
+    // Manage Load More button visibility
+    const loadBtn = document.getElementById("loadMoreLogsBtn");
+    loadBtn.style.display = hasMoreLogs ? "block" : "none";
 
     if (usesMetrics) {
       drawMetricsChart(metricsResult || []);
     } else {
-      drawLossChart(parseLossPoints(rawLogContent));
+      drawLossChart(parseLossPoints(rawLogContent.join("\n")));
+    }
+    
+    // If files tab is currently active, refresh file list in background
+    if (activeSubTab === "files" && !fromTick) {
+      refreshJobFiles();
     }
   } catch (e) {
     if (e.name === "AbortError") { detailFetchInProgress = false; return; }
-    rawLogContent = "(failed to load)";
+    rawLogContent = ["(failed to load)"];
     filterLogs();
   } finally {
     detailFetchInProgress = false;
