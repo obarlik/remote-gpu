@@ -26,4 +26,5 @@ fi
 nohup "$DIR/.venv-linux/bin/python" -m uvicorn gpu_server.main:app --host 0.0.0.0 --port 8077 > server_stdout.log 2> server_stderr.log &
 PID=$!
 echo $PID > server.pid
-echo "Server started in background with PID $PID. Logs: server_stdout.log / server_stderr.log"
+echo "Server started in background with PID $PID. Logs: server_stdout.log"
+echo "Uvicorn running on http://127.0.0.1:8077 (Press CTRL+C to quit)"
