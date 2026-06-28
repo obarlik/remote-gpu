@@ -20,6 +20,20 @@
   input, button { background: #222; color: #ddd; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }
   #log { white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; background: #0c0c0c; padding: 8px; border-radius: 4px; }
   canvas { background: #0c0c0c; border-radius: 4px; }
+  #metricsGrid { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }
+  .metric-card { background: #0c0c0c; border-radius: 4px; padding: 6px 8px; position: relative; cursor: pointer; }
+  .metric-card .metric-title { font-size: 12px; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
+  .metric-card .metric-current { font-weight: bold; }
+  .metric-tooltip { position: absolute; top: 4px; right: 6px; font-size: 11px; color: #aaa; background: #1b1b1b; padding: 1px 5px; border-radius: 3px; pointer-events: none; display: none; }
+  .full-range-note { font-size: 10px; color: #666; }
+  #focusView { display: none; margin: 8px 0; }
+  #focusView .focus-bar { display: flex; align-items: flex-start; gap: 10px; }
+  #focusView .focus-main { flex: 1; min-width: 0; position: relative; }
+  #focusView .metric-title { font-size: 16px; }
+  #focusThumbs { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+  .focus-thumb { background: #0c0c0c; border-radius: 4px; padding: 4px 6px; cursor: pointer; border: 1px solid transparent; }
+  .focus-thumb.active { border-color: #555; }
+  .focus-thumb .metric-title { font-size: 10px; margin-bottom: 2px; }
 </style>
 </head>
 <body>
@@ -38,7 +52,25 @@
   </div>
   <div class="card" style="flex:1; min-width:480px;">
     <b id="jobTitle">Select a job</b>
-    <div id="chartCaption"></div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline;">
+      <div id="chartCaption"></div>
+      <button id="viewModeBtn" style="display:none;" onclick="toggleViewMode()">TV mode</button>
+    </div>
+    <div id="metricsGrid"></div>
+    <div id="focusView">
+      <div class="focus-bar">
+        <div class="focus-main">
+          <div class="metric-title">
+            <span><span id="focusSwatch">&#9632;</span> <span id="focusKey"></span></span>
+            <span id="focusCurrent" class="metric-current"></span>
+          </div>
+          <canvas id="focusCanvas" width="600" height="300"></canvas>
+          <div class="metric-tooltip" id="focusTooltip" style="top:28px;"></div>
+          <div class="full-range-note" id="focusFullRange"></div>
+        </div>
+        <div id="focusThumbs"></div>
+      </div>
+    </div>
     <canvas id="chart" width="560" height="220"></canvas>
     <div id="legend" style="font-size:12px;"></div>
     <div id="log"></div>
@@ -61,6 +93,17 @@ async function api(path) {
 }
 
 function fmtTime(t) { return t ? new Date(t * 1000).toLocaleTimeString() : "-"; }
+
+// Fixed-point hides precision for small numbers (lr=0.0003 looks the same
+// whether it's 2.96e-4 or 3.04e-4) and gets unreadable for large ones
+// (tok_per_sec=121864.745027...). Switch to scientific notation outside
+// a "normal" magnitude range.
+function fmtNum(v) {
+  if (!Number.isFinite(v)) return String(v);
+  const av = Math.abs(v);
+  if (av !== 0 && (av < 1e-3 || av >= 1e5)) return v.toExponential(2);
+  return v.toFixed(4);
+}
 
 // label is free-form user input — never trust it into innerHTML raw.
 function esc(s) {
@@ -90,7 +133,7 @@ async function refreshJobs() {
     const labelText = j.label ? esc(j.label) : `<i>${esc(j.task)}</i>`;
     tr.innerHTML = `<td>${labelText}</td><td title="${esc(j.id)}">${j.id.slice(0, 8)}</td>` +
       `<td class="status-${j.status}">${j.status}</td><td>${fmtTime(j.started_at)}</td>`;
-    tr.onclick = () => { selectedJobId = j.id; refreshDetail(); };
+    tr.onclick = () => { if (j.id !== selectedJobId) { selectedJobId = j.id; setViewMode("grid"); } refreshDetail(); };
     body.appendChild(tr);
   }
 }
@@ -114,37 +157,181 @@ function parseLossPoints(logText) {
   return points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
 }
 
-// records: list of {step, <key>: value, ...}. Draws one line per numeric
-// key found (excluding "step"), each its own color, with a legend.
-function drawMetricsChart(records) {
-  const canvas = document.getElementById("chart");
+// Stable color per metric key, assigned on first sighting so it doesn't
+// shift across refreshes as new keys appear or disappear.
+const keyColors = {};
+function colorForKey(key) {
+  if (!(key in keyColors)) keyColors[key] = SERIES_COLORS[Object.keys(keyColors).length % SERIES_COLORS.length];
+  return keyColors[key];
+}
+
+// Plain min/max scaling lets one early outlier (a loss spike, a warmup
+// step) stretch the axis so all later small fluctuations look flat.
+// Clip to the 3rd-97th percentile with padding instead — outliers still
+// draw, just past the visible edge — so normal variation stays readable.
+function autoRange(ys) {
+  const trueMin = Math.min(...ys), trueMax = Math.max(...ys);
+  const sorted = [...ys].sort((a, b) => a - b);
+  const n = sorted.length;
+  if (n < 8) return { lo: trueMin, hi: trueMax, trueMin, trueMax };
+  const q = (p) => sorted[Math.round(p * (n - 1))];
+  let lo = q(0.03), hi = q(0.97);
+  if (hi - lo < 1e-12) { lo = trueMin; hi = trueMax; }
+  const pad = (hi - lo) * 0.15 || Math.abs(hi || 1) * 0.05 || 1;
+  return { lo: lo - pad, hi: hi + pad, trueMin, trueMax };
+}
+
+// Shared renderer used by both the small-multiples grid and the full-size
+// focus/TV view — same scaling and gridline logic, just different canvas size.
+function renderSeriesIntoCanvas(canvas, series, xMin, xMax, color) {
   const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  document.getElementById("legend").innerHTML = "";
+  const w = canvas.width, h = canvas.height, pad = 10;
+  ctx.clearRect(0, 0, w, h);
+  const ys = series.map((p) => p[1]);
+  const { lo, hi, trueMin, trueMax } = autoRange(ys);
+  const sx = (x) => pad + ((x - xMin) / (xMax - xMin || 1)) * (w - 2 * pad);
+  const sy = (y) => h - pad - ((y - lo) / ((hi - lo) || 1)) * (h - 2 * pad);
+
+  ctx.strokeStyle = "#222";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 2; i++) {
+    const gy = pad + (i / 2) * (h - 2 * pad);
+    ctx.beginPath(); ctx.moveTo(pad, gy); ctx.lineTo(w - pad, gy); ctx.stroke();
+  }
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  series.forEach((p, idx) => (idx === 0 ? ctx.moveTo(sx(p[0]), sy(p[1])) : ctx.lineTo(sx(p[0]), sy(p[1]))));
+  ctx.stroke();
+
+  ctx.fillStyle = "#777";
+  ctx.font = "10px monospace";
+  ctx.fillText(fmtNum(hi), pad, pad + 8);
+  ctx.fillText(fmtNum(lo), pad, h - pad - 2);
+
+  return { sx, lo, hi, trueMin, trueMax };
+}
+
+// Shared hover behavior: show the nearest point's exact value, since the
+// chart line alone can't be read precisely off the pixel grid.
+function attachTooltip(canvas, tooltip, series, sx) {
+  canvas.onmousemove = (ev) => {
+    ev.stopPropagation();
+    const rect = canvas.getBoundingClientRect();
+    const mx = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    let nearest = series[0];
+    for (const p of series) if (Math.abs(sx(p[0]) - mx) < Math.abs(sx(nearest[0]) - mx)) nearest = p;
+    tooltip.textContent = `step ${nearest[0]}: ${fmtNum(nearest[1])}`;
+    tooltip.style.display = "block";
+  };
+  canvas.onmouseleave = () => { tooltip.style.display = "none"; };
+}
+
+// records: list of {step, <key>: value, ...}. One small chart per metric
+// key (small multiples) instead of overlaying everything on one canvas —
+// overlay made lines with different scales/ranges hard to tell apart.
+function drawMetricsChart(records) {
+  metricsState.records = records;
+  const grid = document.getElementById("metricsGrid");
+  grid.innerHTML = "";
   if (records.length < 2) {
-    ctx.fillStyle = "#888";
-    ctx.fillText("not enough data yet", 10, 20);
+    grid.innerHTML = '<span style="color:#888">not enough data yet</span>';
+    document.getElementById("viewModeBtn").style.display = "none";
     return;
   }
   const keys = [...new Set(records.flatMap((r) => Object.keys(r)))].filter((k) => k !== "step");
   const xs = records.map((r) => (r.step !== undefined ? r.step : records.indexOf(r)));
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const pad = 30;
-  const sx = (x) => pad + ((x - xMin) / (xMax - xMin || 1)) * (canvas.width - 2 * pad);
-
-  keys.forEach((key, i) => {
+  metricsState.xMin = Math.min(...xs);
+  metricsState.xMax = Math.max(...xs);
+  metricsState.keys = keys.filter((key) => {
     const series = records.map((r, idx) => [xs[idx], r[key]]).filter((p) => typeof p[1] === "number");
-    if (series.length < 2) return;
-    const ys = series.map((p) => p[1]);
-    const yMin = Math.min(...ys), yMax = Math.max(...ys);
-    const sy = (y) => canvas.height - pad - ((y - yMin) / (yMax - yMin || 1)) * (canvas.height - 2 * pad);
-    const color = SERIES_COLORS[i % SERIES_COLORS.length];
-    ctx.strokeStyle = color;
-    ctx.beginPath();
-    series.forEach((p, idx) => (idx === 0 ? ctx.moveTo(sx(p[0]), sy(p[1])) : ctx.lineTo(sx(p[0]), sy(p[1]))));
-    ctx.stroke();
-    document.getElementById("legend").innerHTML +=
-      `<span style="color:${color}">&#9632; ${key} (${yMin.toFixed(4)} - ${yMax.toFixed(4)})</span> `;
+    return series.length >= 2;
+  });
+  document.getElementById("viewModeBtn").style.display = metricsState.keys.length ? "inline-block" : "none";
+
+  for (const key of metricsState.keys) {
+    const series = records.map((r, idx) => [xs[idx], r[key]]).filter((p) => typeof p[1] === "number");
+    grid.appendChild(buildMetricCard(key, series));
+  }
+  if (viewMode === "focus") renderFocusView();
+}
+
+function buildMetricCard(key, series) {
+  const color = colorForKey(key);
+  const current = series[series.length - 1][1];
+
+  const card = document.createElement("div");
+  card.className = "metric-card";
+  card.innerHTML =
+    `<div class="metric-title"><span style="color:${color}">&#9632; ${esc(key)}</span>` +
+    `<span class="metric-current" style="color:${color}">${fmtNum(current)}</span></div>` +
+    `<canvas width="260" height="110"></canvas>` +
+    `<div class="metric-tooltip"></div>`;
+  card.onclick = () => { metricsState.focusIdx = metricsState.keys.indexOf(key); setViewMode("focus"); };
+
+  const canvas = card.querySelector("canvas");
+  const { sx } = renderSeriesIntoCanvas(canvas, series, metricsState.xMin, metricsState.xMax, color);
+  attachTooltip(canvas, card.querySelector(".metric-tooltip"), series, sx);
+
+  return card;
+}
+
+// Focus/TV mode: one metric large, plus small clickable thumbnails of the
+// rest on the side. No auto-cycling — switching channel is a user action,
+// not something that happens on its own while you're reading a chart.
+const metricsState = { records: [], keys: [], xMin: 0, xMax: 0, focusIdx: 0 };
+let viewMode = "grid";
+
+function setViewMode(mode) {
+  viewMode = mode;
+  document.getElementById("metricsGrid").style.display = mode === "grid" ? "flex" : "none";
+  document.getElementById("focusView").style.display = mode === "focus" ? "block" : "none";
+  document.getElementById("viewModeBtn").textContent = mode === "grid" ? "TV mode" : "Grid view";
+  if (mode === "focus") renderFocusView();
+}
+function toggleViewMode() { setViewMode(viewMode === "grid" ? "focus" : "grid"); }
+
+function seriesFor(key) {
+  return metricsState.records
+    .map((r, idx) => [r.step !== undefined ? r.step : idx, r[key]])
+    .filter((p) => typeof p[1] === "number");
+}
+
+function renderFocusView() {
+  const { keys, xMin, xMax } = metricsState;
+  if (!keys.length) return;
+  metricsState.focusIdx = ((metricsState.focusIdx % keys.length) + keys.length) % keys.length;
+  const key = keys[metricsState.focusIdx];
+  const color = colorForKey(key);
+  const series = seriesFor(key);
+
+  document.getElementById("focusKey").textContent = key;
+  document.getElementById("focusSwatch").style.color = color;
+  document.getElementById("focusCurrent").style.color = color;
+  document.getElementById("focusCurrent").textContent = fmtNum(series[series.length - 1][1]);
+
+  const canvas = document.getElementById("focusCanvas");
+  const { sx, lo, hi, trueMin, trueMax } = renderSeriesIntoCanvas(canvas, series, xMin, xMax, color);
+  attachTooltip(canvas, document.getElementById("focusTooltip"), series, sx);
+  const note = document.getElementById("focusFullRange");
+  note.textContent = (trueMin < lo || trueMax > hi)
+    ? `full range: ${fmtNum(trueMin)} – ${fmtNum(trueMax)} (axis zoomed for readability)`
+    : "";
+
+  const thumbs = document.getElementById("focusThumbs");
+  thumbs.innerHTML = "";
+  keys.forEach((k, i) => {
+    const tColor = colorForKey(k);
+    const tSeries = seriesFor(k);
+    const thumb = document.createElement("div");
+    thumb.className = "focus-thumb" + (i === metricsState.focusIdx ? " active" : "");
+    thumb.innerHTML =
+      `<div class="metric-title"><span style="color:${tColor}">&#9632; ${esc(k)}</span></div>` +
+      `<canvas width="140" height="50"></canvas>`;
+    thumb.onclick = () => { metricsState.focusIdx = i; renderFocusView(); };
+    renderSeriesIntoCanvas(thumb.querySelector("canvas"), tSeries, xMin, xMax, tColor);
+    thumbs.appendChild(thumb);
   });
 }
 
@@ -171,7 +358,7 @@ function drawLossChart(points) {
   points.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p[0]), sy(p[1])) : ctx.lineTo(sx(p[0]), sy(p[1]))));
   ctx.stroke();
   document.getElementById("legend").textContent =
-    `loss: ${yMin.toFixed(4)} - ${yMax.toFixed(4)}  |  step: ${xMin} - ${xMax}`;
+    `loss: ${fmtNum(yMin)} - ${fmtNum(yMax)}  |  step: ${xMin} - ${xMax}`;
 }
 
 async function refreshDetail() {
@@ -180,8 +367,14 @@ async function refreshDetail() {
   document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job " + selectedJobId;
   const usesMetrics = job && (job.capabilities || []).includes("metrics");
 
+  document.getElementById("metricsGrid").style.display = usesMetrics && viewMode === "grid" ? "flex" : "none";
+  document.getElementById("focusView").style.display = usesMetrics && viewMode === "focus" ? "block" : "none";
+  document.getElementById("chart").style.display = usesMetrics ? "none" : "block";
+  document.getElementById("legend").style.display = usesMetrics ? "none" : "block";
+  if (!usesMetrics) document.getElementById("viewModeBtn").style.display = "none";
+
   if (usesMetrics) {
-    document.getElementById("chartCaption").textContent = "structured metrics (job-declared)";
+    document.getElementById("chartCaption").textContent = "structured metrics (job-declared) — hover a chart for exact values";
     let records = [];
     try { records = await (await api(`/v1/jobs/${selectedJobId}/metrics`)).json(); } catch (e) { records = []; }
     drawMetricsChart(records);
