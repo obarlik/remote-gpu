@@ -191,14 +191,25 @@ class JobQueue:
         # which can't encode non-ASCII text (Turkish, generated samples,
         # etc.) and crashes the job with UnicodeEncodeError instead of
         # logging it. Force UTF-8 regardless of locale.
-        child_env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+        repo_root = Path(__file__).resolve().parent.parent
+        child_env = {
+            **os.environ,
+            "PYTHONUTF8": "1",
+            "PYTHONIOENCODING": "utf-8",
+            # Run with cwd=output_dir (below) so a script that writes a
+            # relative path lands in its own job folder instead of polluting
+            # the repo root — but built-in tasks still need `-m gpu_server.
+            # jobs.X` to resolve, which relies on cwd normally; PYTHONPATH
+            # keeps that working with cwd no longer pointing at the repo.
+            "PYTHONPATH": os.pathsep.join(filter(None, [str(repo_root), os.environ.get("PYTHONPATH")])),
+        }
 
         with open(job.log_path, "w", encoding="utf-8") as log_file:
             job.process = subprocess.Popen(
                 cmd,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
-                cwd=str(Path(__file__).resolve().parent.parent),
+                cwd=str(job.output_dir),
                 env=child_env,
             )
             return_code = job.process.wait()
