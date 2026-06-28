@@ -114,24 +114,25 @@
   button:hover { opacity: 0.9; }
   button:active { transform: scale(0.98); }
 
-  /* GPU Monitor widget */
+  /* GPU Monitor widget (Now Sidebar Vertical Layout) */
   .gpu-monitor {
     display: flex;
-    align-items: center;
-    gap: 20px;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
   }
   .gpu-stat-pill {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--panel-border);
     border-radius: 12px;
-    padding: 6px 14px;
+    padding: 10px 14px;
     font-size: 12px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
   }
   .gpu-stat-label { color: var(--text-secondary); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .gpu-stat-val { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .gpu-stat-val { font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   
   .progress-bar-container {
     width: 80px;
@@ -147,12 +148,14 @@
     transition: width 0.5s ease;
   }
 
-  /* Main Workspace Layout */
+  /* Main Workspace Layout (Full Height Control Room Layout) */
   .workspace {
     display: grid;
-    grid-template-columns: 380px 1fr;
+    grid-template-columns: 360px 1fr;
     gap: 20px;
-    align-items: start;
+    height: calc(100vh - 100px); /* Fill the screen */
+    align-items: stretch;
+    overflow: hidden;
   }
 
   /* Jobs Table section */
@@ -160,7 +163,7 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    max-height: 80vh;
+    height: 100%;
     overflow: hidden;
   }
   .jobs-table-container {
@@ -611,6 +614,72 @@
     gap: 4px;
   }
 
+  /* Split Pane Layout Details */
+  .detail-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    gap: 16px;
+  }
+  
+  /* Flex chart containers */
+  #metricsGrid {
+    flex: 1;
+    min-height: 220px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  #focusView {
+    flex: 1;
+    min-height: 220px;
+    overflow: hidden;
+  }
+  #defaultChartContainer {
+    flex: 1;
+    min-height: 220px;
+    overflow: hidden;
+  }
+  
+  /* Ensure canvas takes exact space */
+  .chart-section canvas {
+    max-height: 160px;
+  }
+  #focusCanvas {
+    max-height: calc(100% - 40px);
+  }
+
+  /* Fixed bottom container for logs/files tab */
+  .tab-container {
+    flex-shrink: 0;
+    height: 320px;
+    display: flex;
+    flex-direction: column;
+  }
+  .tab-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .tab-content.active {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  
+  /* Tab contents scroll individually */
+  .terminal-body {
+    flex: 1;
+    height: 100% !important;
+    overflow-y: auto;
+  }
+  
+  .file-table-scroll-container {
+    flex: 1;
+    overflow-y: auto;
+    background: #09070f;
+  }
+
   /* Custom Minimalist Scrollbars */
   ::-webkit-scrollbar {
     width: 6px;
@@ -649,39 +718,6 @@
 <header class="panel">
   <h1><span class="pulse"></span> remote-gpu dashboard</h1>
   
-  <div class="gpu-monitor" id="gpuMonitor">
-    <div class="gpu-stat-pill">
-      <span class="gpu-stat-label">GPU Name</span>
-      <span class="gpu-stat-val" id="gpuName">Querying...</span>
-    </div>
-    <div class="gpu-stat-pill">
-      <span class="gpu-stat-label">Utilization</span>
-      <span class="gpu-stat-val">
-        <span id="gpuUtil">0%</span>
-        <div class="progress-bar-container">
-          <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
-        </div>
-      </span>
-    </div>
-    <div class="gpu-stat-pill">
-      <span class="gpu-stat-label">VRAM Usage</span>
-      <span class="gpu-stat-val">
-        <span id="gpuVram">0 / 0 MB</span>
-        <div class="progress-bar-container">
-          <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
-        </div>
-      </span>
-    </div>
-    <div class="gpu-stat-pill">
-      <span class="gpu-stat-label">Hardware Health</span>
-      <div class="gpu-stats-row">
-        <span class="gpu-sub-pill" id="gpuTemp" title="Temperature">🔥 --°C</span>
-        <span class="gpu-sub-pill" id="gpuFan" title="Fan Speed">🌀 --%</span>
-        <span class="gpu-sub-pill" id="gpuPower" title="Power Draw / Limit">⚡ -- / -- W</span>
-      </div>
-    </div>
-  </div>
-
   <div class="auth-box">
     <input id="token" type="password" placeholder="Enter Bearer Token..." size="30">
     <button onclick="saveToken()">Save Key</button>
@@ -691,6 +727,39 @@
 <div class="workspace">
   <!-- Jobs list panel -->
   <section class="panel jobs-panel">
+    <div class="gpu-monitor" id="gpuMonitor">
+      <div class="gpu-stat-pill">
+        <span class="gpu-stat-label">GPU Name</span>
+        <span class="gpu-stat-val" id="gpuName">Querying...</span>
+      </div>
+      <div class="gpu-stat-pill">
+        <span class="gpu-stat-label">Utilization</span>
+        <span class="gpu-stat-val">
+          <span id="gpuUtil">0%</span>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
+          </div>
+        </span>
+      </div>
+      <div class="gpu-stat-pill">
+        <span class="gpu-stat-label">VRAM Usage</span>
+        <span class="gpu-stat-val">
+          <span id="gpuVram">0 / 0 MB</span>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
+          </div>
+        </span>
+      </div>
+      <div class="gpu-stat-pill">
+        <span class="gpu-stat-label">Hardware Health</span>
+        <div class="gpu-stats-row">
+          <span class="gpu-sub-pill" id="gpuTemp" title="Temperature">🔥 --°C</span>
+          <span class="gpu-sub-pill" id="gpuFan" title="Fan Speed">🌀 --%</span>
+          <span class="gpu-sub-pill" id="gpuPower" title="Power Draw / Limit">⚡ -- / -- W</span>
+        </div>
+      </div>
+    </div>
+
     <h2>Jobs queue</h2>
     <div class="jobs-table-container">
       <table id="jobs">
@@ -710,7 +779,7 @@
   </section>
 
   <!-- Details panel -->
-  <section class="panel details-panel">
+  <section class="panel detail-panel">
     <div class="details-header">
       <div class="details-title-container">
         <h2 id="jobTitle">Select a job</h2>
@@ -785,7 +854,7 @@
 
       <!-- Tab Content: Files -->
       <div id="tabContentFiles" class="tab-content">
-        <div style="max-height: 300px; overflow-y: auto; background: #09070f;">
+        <div class="file-table-scroll-container">
           <table class="file-table" id="fileListTable">
             <thead>
               <tr>
