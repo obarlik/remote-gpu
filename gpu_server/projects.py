@@ -20,6 +20,15 @@ _store = JsonStore(DATA_DIR / "projects.json")
 class ProjectManager:
     def __init__(self):
         self._projects: dict[str, dict[str, Any]] = _store.load()
+        # Backfill records persisted before 'capabilities' existed, so old
+        # projects don't KeyError the first time a new field is read.
+        migrated = False
+        for record in self._projects.values():
+            if "capabilities" not in record:
+                record["capabilities"] = []
+                migrated = True
+        if migrated:
+            _store.save(self._projects)
 
     def create(
         self,

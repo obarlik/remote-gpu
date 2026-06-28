@@ -20,6 +20,15 @@ _store = JsonStore(DATA_DIR / "templates.json")
 class TemplateManager:
     def __init__(self):
         self._templates: dict[str, dict[str, Any]] = _store.load()
+        # Backfill records persisted before 'capabilities' existed, so old
+        # templates don't KeyError the first time a new field is read.
+        migrated = False
+        for record in self._templates.values():
+            if "capabilities" not in record:
+                record["capabilities"] = []
+                migrated = True
+        if migrated:
+            _store.save(self._templates)
 
     def create(
         self,
