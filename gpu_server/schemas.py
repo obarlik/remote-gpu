@@ -11,6 +11,16 @@ class JobSubmitRequest(BaseModel):
         description="'transformer_train' (built-in) or 'custom_script' (any uploaded script)",
         examples=["custom_script"],
     )
+    label: str | None = Field(
+        default=None,
+        description=(
+            "Free-form, human-readable description of what this run actually is — "
+            "you decide the wording, the server never infers it from task/params. "
+            "Shown in job listings and the dashboard instead of just the task name, "
+            "so e.g. 'scaleup d640 attempt 3' is distinguishable from 'quick sanity check'."
+        ),
+        examples=["runo scaleup d640 attempt 3"],
+    )
     params: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -50,6 +60,7 @@ class UploadInitRequest(BaseModel):
 class JobInfo(BaseModel):
     id: str
     task: str
+    label: str | None = None
     project: str | None = None
     capabilities: list[str] = Field(default_factory=list)
     status: JobStatus
@@ -135,6 +146,11 @@ class ProjectInfo(BaseModel):
 
 
 class ProjectJobRequest(BaseModel):
+    label: str | None = Field(
+        default=None,
+        description="Free-form description of this specific run, shown in job listings and the dashboard.",
+        examples=["scaleup d640 attempt 3"],
+    )
     params: dict[str, Any] = Field(
         default_factory=dict,
         description="This run's deltas only — merged on top of the project's defaults.",

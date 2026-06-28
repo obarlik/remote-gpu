@@ -36,6 +36,14 @@ This is the escape hatch that makes the server framework-agnostic — a script
 that loads a raw `.cl` kernel file and runs it via pyopencl works exactly
 the same way as a pure-torch script.
 
+`task` itself is not a free-form label — it's either `custom_script` or a
+name registered in source (`transformer_train`), since it decides how the
+server launches the process. To describe what a specific run actually
+*is*, set `"label"` (e.g. `"scaleup d640 attempt 3"`) on submission — free
+text, you choose the wording, shown in job listings and the dashboard
+instead of everyone just seeing `custom_script`. Works the same way on
+`POST /v1/jobs` and `POST /v1/projects/{name}/jobs`.
+
 ## Templates and projects
 
 For recurring job shapes, avoid re-sending everything on every submission:

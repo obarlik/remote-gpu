@@ -123,7 +123,7 @@ def submit_project_job(name: str, req: ProjectJobRequest):
     of failing deep inside the training script."""
     try:
         task, final_params, capabilities = project_manager.resolve_job(name, req.params)
-        job = job_queue.submit(task, final_params, project=name, capabilities=capabilities)
+        job = job_queue.submit(task, final_params, project=name, capabilities=capabilities, label=req.label)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return job.to_dict()

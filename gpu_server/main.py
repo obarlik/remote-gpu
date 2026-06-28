@@ -197,7 +197,7 @@ def submit_job(req: JobSubmitRequest, _: None = Depends(require_token)):
     For task='custom_script', params must include 'script_path' from a prior
     /v1/files upload. Returns the job with status='queued'."""
     try:
-        job = job_queue.submit(req.task, req.params, capabilities=req.capabilities)
+        job = job_queue.submit(req.task, req.params, capabilities=req.capabilities, label=req.label)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return job.to_dict()

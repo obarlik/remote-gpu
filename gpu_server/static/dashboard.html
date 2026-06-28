@@ -34,7 +34,7 @@
 <div class="row" style="margin-top:12px; align-items: flex-start;">
   <div class="card" style="min-width:480px;">
     <b>Jobs</b>
-    <table id="jobs"><thead><tr><th>id</th><th>task</th><th>status</th><th>started</th></tr></thead><tbody></tbody></table>
+    <table id="jobs"><thead><tr><th>label</th><th>id</th><th>status</th><th>started</th></tr></thead><tbody></tbody></table>
   </div>
   <div class="card" style="flex:1; min-width:480px;">
     <b id="jobTitle">Select a job</b>
@@ -62,6 +62,13 @@ async function api(path) {
 
 function fmtTime(t) { return t ? new Date(t * 1000).toLocaleTimeString() : "-"; }
 
+// label is free-form user input — never trust it into innerHTML raw.
+function esc(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
 async function refreshGpu() {
   try {
     const gpu = await (await api("/v1/gpu")).json();
@@ -80,7 +87,8 @@ async function refreshJobs() {
     jobsById[j.id] = j;
     const tr = document.createElement("tr");
     if (j.id === selectedJobId) tr.className = "selected";
-    tr.innerHTML = `<td>${j.id}</td><td>${j.task}</td>` +
+    const labelText = j.label ? esc(j.label) : `<i>${esc(j.task)}</i>`;
+    tr.innerHTML = `<td>${labelText}</td><td title="${esc(j.id)}">${j.id.slice(0, 8)}</td>` +
       `<td class="status-${j.status}">${j.status}</td><td>${fmtTime(j.started_at)}</td>`;
     tr.onclick = () => { selectedJobId = j.id; refreshDetail(); };
     body.appendChild(tr);
@@ -168,8 +176,8 @@ function drawLossChart(points) {
 
 async function refreshDetail() {
   if (!selectedJobId) return;
-  document.getElementById("jobTitle").textContent = "Job " + selectedJobId;
   const job = jobsById[selectedJobId];
+  document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job " + selectedJobId;
   const usesMetrics = job && (job.capabilities || []).includes("metrics");
 
   if (usesMetrics) {
