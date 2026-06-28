@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import subprocess
 import threading
@@ -176,12 +177,20 @@ class JobQueue:
             job.status = "running"
             job.started_at = time.time()
 
+        # Without this, a Python child on Windows whose stdout is redirected
+        # to a file falls back to the system ANSI codepage (e.g. cp1252),
+        # which can't encode non-ASCII text (Turkish, generated samples,
+        # etc.) and crashes the job with UnicodeEncodeError instead of
+        # logging it. Force UTF-8 regardless of locale.
+        child_env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
         with open(job.log_path, "w", encoding="utf-8") as log_file:
             job.process = subprocess.Popen(
                 cmd,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 cwd=str(Path(__file__).resolve().parent.parent),
+                env=child_env,
             )
             return_code = job.process.wait()
 
