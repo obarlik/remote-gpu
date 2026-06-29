@@ -24,7 +24,7 @@ from gpu_server.schemas import (
     GPUStatusResponse,
     JobFileInfoExtended,
 )
-from gpu_server.server_info import FEATURES, VERSION
+from gpu_server.server_info import FEATURES, VERSION, WHATSNEW
 from gpu_server.uploads import upload_manager
 
 import time
@@ -409,7 +409,7 @@ def server_info():
     of guessing from a version number or re-reading docs after every
     update. New entries only ever get appended to 'features' — never
     renamed or removed — so a client can safely check for one by name."""
-    return {"version": VERSION, "features": FEATURES}
+    return {"version": VERSION, "features": FEATURES, "whatsnew": WHATSNEW}
 
 
 @app.get("/dashboard", response_class=HTMLResponse, summary="Web UI: job list, status, and a best-effort loss chart")
