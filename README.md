@@ -44,6 +44,37 @@ text, you choose the wording, shown in job listings and the dashboard
 instead of everyone just seeing `custom_script`. Works the same way on
 `POST /v1/jobs` and `POST /v1/projects/{name}/jobs`.
 
+### Job Retention Policy
+
+You can optionally specify a `"retention"` policy when submitting a job to manage output folder cleanup and prevent disk space bloat:
+
+```json
+{
+  "task": "custom_script",
+  "params": { ... },
+  "retention": {
+    "on_success": "delete_artifacts",
+    "on_failure": "keep_all",
+    "ttl_hours": 24
+  }
+}
+```
+
+* **`on_success` / `on_failure` / `on_cancelled`**:
+  * `"keep_all"` (default): Keeps the entire job directory intact.
+  * `"delete_artifacts"`: Deletes large files/checkpoints but preserves `log.txt`, `params.json`, and `metrics.jsonl` so metric graphs and logs remain viewable on the dashboard.
+  * `"delete_all"`: Deletes the entire `data/jobs/<job_id>` directory.
+* **`ttl_hours`**: An optional integer specifying the relative lifetime of the job's files in hours. Once this duration passes after job completion, the background cleanup task automatically purges the physical output directory.
+
+### Interactive Virtual Terminal
+
+All running jobs are launched inside a pseudoterminal (PTY), allowing interactive bidirectional console communication.
+
+* **API Endpoint (WebSocket)**: `ws://<host>:8077/v1/jobs/{job_id}/terminal?token=<bearer_token>`
+* **Keystroke Inputs**: Send text frames containing raw user keys/keystrokes to write directly into the process's standard input.
+* **Real-time Outputs**: The server streams raw terminal outputs (including colors, ANSI animations, and carriage returns) as binary WebSocket frames.
+* **Log Capping**: To prevent disk space bloat from runaway scripts, physical writes to `log.txt` on disk are capped at **10MB**, while the real-time WebSocket stream remains completely unrestricted.
+
 ## Templates and projects
 
 For recurring job shapes, avoid re-sending everything on every submission:
