@@ -326,6 +326,65 @@ app = FastAPI(
     ),
     version=VERSION,
 )
+
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Manually inject the WebSocket path into the paths dictionary
+    if "paths" not in openapi_schema:
+        openapi_schema["paths"] = {}
+    openapi_schema["paths"]["/v1/jobs/{job_id}/terminal"] = {
+        "get": {
+            "summary": "WebSocket: Interactive virtual terminal connection",
+            "description": (
+                "Establishes a bidirectional WebSocket connection to interact with the job's "
+                "virtual terminal (PTY) in real-time. Expects a 'token' query parameter "
+                "or Authorization header for authentication.\n\n"
+                "Send text frames containing user inputs (keystrokes), and receive binary frames "
+                "containing raw terminal outputs (with ANSI colors and progress bar movements)."
+            ),
+            "parameters": [
+                {
+                    "name": "job_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string"},
+                    "description": "The unique ID of the running job."
+                },
+                {
+                    "name": "token",
+                    "in": "query",
+                    "required": False,
+                    "schema": {"type": "string"},
+                    "description": "Bearer token for authorization (useful when standard headers cannot be set)."
+                }
+            ],
+            "responses": {
+                "101": {
+                    "description": "Switching Protocols (Successfully upgraded to WebSocket connection)"
+                },
+                "401": {
+                    "description": "Unauthorized (missing or invalid token)"
+                },
+                "404": {
+                    "description": "Job not found"
+                }
+            }
+        }
+    }
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
 # Compresses outgoing responses (job lists, logs, file downloads) when the
 # client sends Accept-Encoding: gzip. Pure response-side, opt-in via that
 # header, so clients that don't ask for it see no change at all.
@@ -857,3 +916,13 @@ async def job_terminal_ws(websocket: WebSocket, job_id: str):
             await websocket.close()
         except Exception:
             pass
+
+
+@app.get("/v1/help", response_class=PlainTextResponse, summary="Get console-friendly Markdown API guide")
+def get_help_guide():
+    """Returns the server's README.md markdown documentation as plain text,
+    making it easy for CLI consumers to view help via curl."""
+    readme_path = Path(__file__).resolve().parent.parent / "README.md"
+    if readme_path.is_file():
+        return readme_path.read_text(encoding="utf-8")
+    return "Help documentation not found."

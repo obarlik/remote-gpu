@@ -26,13 +26,15 @@ FEATURES = [
     "artifact_browser",
     "job_retention",
     "interactive_terminal",
+    "help_endpoint",
 ]
 
 WHATSNEW = {
     "1.6.0": [
         "Added automated job retention policies (TTL and completion-based artifact deletion) to prevent disk space bloat.",
         "Added interactive virtual terminal support using Linux PTYs and WebSockets for real-time tqdm and console input/output.",
-        "Added partitioned history metadata store to eliminate disk load/save overhead."
+        "Added partitioned history metadata store to eliminate disk load/save overhead.",
+        "Added console-friendly Markdown API guide endpoint via GET /v1/help."
     ],
     "1.5.0": [
         "Implemented ultra-compact Live Stats double-column grid layout in GPU Monitor.",
