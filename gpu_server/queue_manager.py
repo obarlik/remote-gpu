@@ -44,7 +44,12 @@ class Job:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = self.output_dir / "log.txt"
         self.process: subprocess.Popen | None = None
-        self.retention = retention
+        self.retention = retention or {
+            "on_success": "keep_all",
+            "on_failure": "keep_all",
+            "on_cancelled": "keep_all",
+            "ttl_hours": None
+        }
         self.lock = threading.Lock()
         
         # Virtual Terminal & WebSocket properties
@@ -69,7 +74,12 @@ class Job:
         job.started_at = record.get("started_at")
         job.finished_at = record.get("finished_at")
         job.error = record.get("error")
-        job.retention = record.get("retention")
+        job.retention = record.get("retention") or {
+            "on_success": "keep_all",
+            "on_failure": "keep_all",
+            "on_cancelled": "keep_all",
+            "ttl_hours": None
+        }
         saved_path = Path(record["output_dir"])
         if not saved_path.exists():
             resolved = JOBS_DIR / record["id"]
@@ -155,6 +165,20 @@ class JobQueue:
 
     def _load_history_async(self) -> None:
         try:
+            # Lossless automatic migration from unified jobs_history.json to partitioned history
+            legacy_history_path = DATA_DIR / "jobs_history.json"
+            if legacy_history_path.is_file():
+                print("Migration: Found legacy jobs_history.json. Migrating to partitioned history...")
+                try:
+                    legacy_data = json.loads(legacy_history_path.read_text(encoding="utf-8"))
+                    for key, record in legacy_data.items():
+                        _history.save_one(key, record)
+                    backup_path = legacy_history_path.with_suffix(".json.bak")
+                    legacy_history_path.replace(backup_path)
+                    print(f"Migration: Successfully migrated {len(legacy_data)} jobs. Legacy backup saved as jobs_history.json.bak")
+                except Exception as migrate_err:
+                    print(f"Migration failed: {migrate_err}")
+
             # Execute the heavy disk read outside of the global lock
             # so the main thread and queue submission are never blocked
             history_data = _history.load()
