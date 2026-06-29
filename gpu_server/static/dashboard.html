@@ -946,6 +946,7 @@
         <div class="gpu-tabs">
           <button class="gpu-tab-btn active" id="gpuTabStats" onclick="switchGpuTab('stats', event)">Live Stats</button>
           <button class="gpu-tab-btn" id="gpuTabSpecs" onclick="switchGpuTab('specs', event)">Specs</button>
+          <button class="gpu-tab-btn" id="gpuTabNetwork" onclick="switchGpuTab('network', event)">Network</button>
         </div>
 
         <div class="gpu-monitor" id="gpuMonitor">
@@ -1036,6 +1037,22 @@
             <div class="gpu-stat-pill" style="flex-direction: column; align-items: flex-start; gap: 4px; border-bottom: none; padding-bottom: 0;">
               <span class="gpu-stat-label" style="font-size: 10px; opacity: 0.6;">CPU Processor</span>
               <span class="gpu-stat-val" id="gpuSpecCpu" style="font-size: 11px; font-weight: 500; text-align: left; width: 100%;">--</span>
+            </div>
+          </div>
+
+          <!-- Tab content: Network -->
+          <div id="gpuContentNetwork" class="gpu-tab-content">
+            <div class="gpu-stat-pill" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span class="gpu-stat-label" style="font-size: 10px; opacity: 0.6;">Tailscale IP (External)</span>
+              <span class="gpu-stat-val" id="gpuNetTailscale" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; text-align: left; width: 100%;">--</span>
+            </div>
+            <div class="gpu-stat-pill" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span class="gpu-stat-label" style="font-size: 10px; opacity: 0.6;">Intranet IP (Local)</span>
+              <span class="gpu-stat-val" id="gpuNetIntranet" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; text-align: left; width: 100%;">--</span>
+            </div>
+            <div class="gpu-stat-pill" style="flex-direction: column; align-items: flex-start; gap: 4px; border-bottom: none; padding-bottom: 0;">
+              <span class="gpu-stat-label" style="font-size: 10px; opacity: 0.6;">MagicDNS FQDN</span>
+              <span class="gpu-stat-val" id="gpuNetFqdn" style="font-size: 10px; font-family: 'JetBrains Mono', monospace; text-align: left; width: 100%; color: var(--text-secondary);">--</span>
             </div>
           </div>
         </div>
@@ -1308,6 +1325,13 @@ async function refreshGpu() {
     document.getElementById("gpuSpecDriverCuda").textContent = `${gpu.gpu_driver_version} / CUDA ${gpu.gpu_cuda_version}`;
     document.getElementById("gpuSpecTorch").textContent = `${gpu.torch_version} | CUDA Available: ${gpu.torch_cuda_available ? "Yes" : "No"}`;
     document.getElementById("gpuSpecCpu").textContent = `${gpu.cpu_model} (${gpu.cpu_cores} cores)`;
+
+    // Network Tab
+    const tailscaleIps = gpu.tailscale_ips || [];
+    const intranetIps = gpu.intranet_ips || [];
+    document.getElementById("gpuNetTailscale").textContent = tailscaleIps.length > 0 ? tailscaleIps.join(", ") : "--";
+    document.getElementById("gpuNetIntranet").textContent = intranetIps.length > 0 ? intranetIps.join(", ") : "--";
+    document.getElementById("gpuNetFqdn").textContent = gpu.fqdn || "--";
   } catch (e) {
     document.getElementById("gpuName").textContent = "(System status unavailable)";
     document.getElementById("gpuUtil").textContent = "0%";
@@ -1330,6 +1354,10 @@ async function refreshGpu() {
     document.getElementById("sysBoardTemp").textContent = "⚙️ --°C";
     document.getElementById("gpuFan").textContent = "🌀 --%";
     document.getElementById("gpuPower").textContent = "⚡ -- W";
+
+    document.getElementById("gpuNetTailscale").textContent = "--";
+    document.getElementById("gpuNetIntranet").textContent = "--";
+    document.getElementById("gpuNetFqdn").textContent = "--";
   }
 }
 

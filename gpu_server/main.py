@@ -11,7 +11,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
 from gpu_server.auth import require_token
-from gpu_server.config import DATASETS_DIR as UPLOADS_DIR
+from gpu_server.config import DATASETS_DIR as UPLOADS_DIR, TRAIN_PYTHON_EXE
 from gpu_server.projects import project_manager
 from gpu_server.queue_manager import job_queue
 from gpu_server.routes_lab import router as lab_router
@@ -44,9 +44,13 @@ class SystemStatsMonitor:
         self.torch_version = "Not Installed"
         self.torch_cuda_available = False
         self.gpu_cuda_version = "Unknown"
+        self.intranet_ips = []
+        self.tailscale_ips = []
+        self.fqdn = "Unknown"
         self._load_cpu_specs()
         self._load_torch_info()
         self._load_cuda_version()
+        self._load_network_info()
         
     def _load_cpu_specs(self):
         try:
@@ -64,13 +68,20 @@ class SystemStatsMonitor:
 
     def _load_torch_info(self):
         try:
-            import torch
-            self.torch_version = torch.__version__
-            self.torch_cuda_available = torch.cuda.is_available()
-            if self.torch_cuda_available and torch.version.cuda:
-                self.torch_version += f" (CUDA {torch.version.cuda})"
+            # Query the target training python interpreter for torch details
+            out = subprocess.check_output(
+                [TRAIN_PYTHON_EXE, "-W", "ignore", "-c", "import torch; print(torch.__version__, torch.cuda.is_available(), torch.version.cuda or '')"],
+                text=True,
+                timeout=30
+            ).strip().split()
+            if len(out) >= 2:
+                self.torch_version = out[0]
+                self.torch_cuda_available = (out[1] == "True")
+                if len(out) >= 3 and out[2]:
+                    self.torch_version += f" (CUDA {out[2]})"
         except Exception:
-            pass
+            self.torch_version = "Not Installed"
+            self.torch_cuda_available = False
 
     def _load_cuda_version(self):
         try:
@@ -83,6 +94,28 @@ class SystemStatsMonitor:
                     if len(parts) == 2:
                         self.gpu_cuda_version = parts[1].split()[0].strip()
                         break
+        except Exception:
+            pass
+
+    def _load_network_info(self):
+        import socket
+        try:
+            self.fqdn = socket.getfqdn()
+        except Exception:
+            pass
+        
+        try:
+            out = subprocess.check_output(["hostname", "-I"], text=True, timeout=5)
+            for ip in out.strip().split():
+                if ip.startswith("127.") or ip.startswith("169.254."):
+                    continue
+                # Tailscale range is 100.64.0.0/10 (100.64.0.0 - 100.127.255.255)
+                if ip.startswith("100."):
+                    parts = [int(x) for x in ip.split(".")]
+                    if len(parts) == 4 and 64 <= parts[1] < 128:
+                        self.tailscale_ips.append(ip)
+                        continue
+                self.intranet_ips.append(ip)
         except Exception:
             pass
 
@@ -457,6 +490,10 @@ def gpu_status(_: None = Depends(require_token)):
             "gpu_cuda_version": sys_monitor.gpu_cuda_version,
             "torch_version": sys_monitor.torch_version,
             "torch_cuda_available": sys_monitor.torch_cuda_available,
+            # Network Addresses
+            "intranet_ips": sys_monitor.intranet_ips,
+            "tailscale_ips": sys_monitor.tailscale_ips,
+            "fqdn": sys_monitor.fqdn,
         }
     except FileNotFoundError:
         # Mock/CPU Environment Fallback
@@ -486,6 +523,10 @@ def gpu_status(_: None = Depends(require_token)):
             "gpu_cuda_version": "12.2",
             "torch_version": sys_monitor.torch_version,
             "torch_cuda_available": sys_monitor.torch_cuda_available,
+            # Network Addresses
+            "intranet_ips": sys_monitor.intranet_ips,
+            "tailscale_ips": sys_monitor.tailscale_ips,
+            "fqdn": sys_monitor.fqdn,
         }
     except Exception as exc:
         raise HTTPException(500, f"nvidia-smi query failed: {exc}") from exc

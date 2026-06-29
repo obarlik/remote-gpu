@@ -195,6 +195,11 @@ class GPUStatusResponse(BaseModel):
     gpu_cuda_version: str = Field("Unknown", description="NVIDIA CUDA version.")
     torch_version: str = Field("Not Installed", description="Installed PyTorch version.")
     torch_cuda_available: bool = Field(False, description="Whether PyTorch CUDA device is available.")
+    
+    # Network Addresses
+    intranet_ips: list[str] = Field(default_factory=list, description="List of intranet IP addresses.")
+    tailscale_ips: list[str] = Field(default_factory=list, description="List of Tailscale VPN IP addresses.")
+    fqdn: str = Field("Unknown", description="Fully Qualified Domain Name of the host.")
 
 
 class JobFileInfoExtended(BaseModel):
