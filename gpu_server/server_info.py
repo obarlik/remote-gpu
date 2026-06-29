@@ -27,3 +27,40 @@ FEATURES = [
     "job_retention",
     "interactive_terminal",
 ]
+
+WHATSNEW = {
+    "1.6.0": [
+        "Added automated job retention policies (TTL and completion-based artifact deletion) to prevent disk space bloat.",
+        "Added interactive virtual terminal support using Linux PTYs and WebSockets for real-time tqdm and console input/output.",
+        "Added partitioned history metadata store to eliminate disk load/save overhead."
+    ],
+    "1.5.0": [
+        "Implemented ultra-compact Live Stats double-column grid layout in GPU Monitor.",
+        "Relocated GPU monitor to the sidebar and restricted panel heights to prevent layout scrolling.",
+        "Added CPU and Motherboard temperature sensors to System Health."
+    ],
+    "1.4.0": [
+        "Implemented full server system resource monitoring (CPU, RAM, Net, Disk).",
+        "Added detailed specs tab showing Host GPU Driver/CUDA, PyTorch config, and CPU details."
+    ],
+    "1.3.0": [
+        "Overhauled dashboard design with a unified glassmorphic single flow layout.",
+        "Added interactive TV/Focus mode modal with auto-scaling metrics charts.",
+        "Added collapsible save key badge and nowrap compact jobs list layout."
+    ],
+    "1.2.0": [
+        "Added customized minimalist dark-themed scrollbars across all panels.",
+        "Added log pagination support to load older logs backwards on scroll.",
+        "Added enhanced GPU monitoring and client-side artifact browser."
+    ],
+    "1.1.0": [
+        "Added custom script task execution support to run framework-agnostic training scripts.",
+        "Added templates and projects API endpoints with parameter snapshotting.",
+        "Added file-sharing capabilities via GET /v1/projects/{name}/files."
+    ],
+    "1.0.0": [
+        "Initial release with sequential training job queue.",
+        "Built-in transformer LM training task ('transformer_train') fully configurable.",
+        "Added token authorization and basic web dashboard with loss charts."
+    ]
+}
