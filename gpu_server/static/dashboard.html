@@ -951,8 +951,9 @@
         <div class="gpu-monitor" id="gpuMonitor">
           <!-- Tab content: Live Stats -->
           <div id="gpuContentStats" class="gpu-tab-content active">
+            <!-- GPU Stats -->
             <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">Utilization</span>
+              <span class="gpu-stat-label">GPU Util</span>
               <span class="gpu-stat-val">
                 <span id="gpuUtil">0%</span>
                 <div class="progress-bar-container">
@@ -969,8 +970,46 @@
                 </div>
               </span>
             </div>
+            
+            <!-- CPU & RAM Stats -->
             <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">Hardware Health</span>
+              <span class="gpu-stat-label">CPU Util</span>
+              <span class="gpu-stat-val">
+                <span id="sysCpu">0%</span>
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" id="sysCpuBar" style="width: 0%"></div>
+                </div>
+              </span>
+            </div>
+            <div class="gpu-stat-pill">
+              <span class="gpu-stat-label">System RAM</span>
+              <span class="gpu-stat-val">
+                <span id="sysRam">0.0 / 0.0 GB</span>
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" id="sysRamBar" style="width: 0%"></div>
+                </div>
+              </span>
+            </div>
+
+            <!-- Network & Disk Stats -->
+            <div class="gpu-stat-pill">
+              <span class="gpu-stat-label">Network Traffic</span>
+              <div class="gpu-stats-row" style="margin-top: 2px;">
+                <span class="gpu-sub-pill" id="sysNetDown" title="Download Speed">↓ 0 KB/s</span>
+                <span class="gpu-sub-pill" id="sysNetUp" title="Upload Speed">↑ 0 KB/s</span>
+              </div>
+            </div>
+            <div class="gpu-stat-pill" style="border-bottom: none; padding-bottom: 0;">
+              <span class="gpu-stat-label">Disk Activity</span>
+              <div class="gpu-stats-row" style="margin-top: 2px;">
+                <span class="gpu-sub-pill" id="sysDiskRead" title="Read Speed">📖 0 KB/s</span>
+                <span class="gpu-sub-pill" id="sysDiskWrite" title="Write Speed">✍️ 0 KB/s</span>
+              </div>
+            </div>
+            
+            <!-- GPU Extra Health -->
+            <div class="gpu-stat-pill" style="border-top: 1px solid rgba(255, 255, 255, 0.05); margin-top: 8px; padding-top: 8px;">
+              <span class="gpu-stat-label">GPU Health</span>
               <div class="gpu-stats-row">
                 <span class="gpu-sub-pill" id="gpuTemp" title="Temperature">🔥 --°C</span>
                 <span class="gpu-sub-pill" id="gpuFan" title="Fan Speed">🌀 --%</span>
@@ -981,9 +1020,21 @@
 
           <!-- Tab content: GPU Specs -->
           <div id="gpuContentSpecs" class="gpu-tab-content">
+            <div class="gpu-stat-pill" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span class="gpu-stat-label" style="font-size: 10px; opacity: 0.6;">GPU Model</span>
+              <span class="gpu-stat-val" id="gpuName" style="font-size: 11px; font-weight: 600; text-align: left; width: 100%;">Querying...</span>
+            </div>
             <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">GPU Model</span>
-              <span class="gpu-stat-val" id="gpuName" style="font-size: 11px;">Querying...</span>
+              <span class="gpu-stat-label">Driver / CUDA</span>
+              <span class="gpu-stat-val" id="gpuSpecDriverCuda" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">--</span>
+            </div>
+            <div class="gpu-stat-pill" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span class="gpu-stat-label" style="font-size: 10px; opacity: 0.6;">PyTorch Info</span>
+              <span class="gpu-stat-val" id="gpuSpecTorch" style="font-size: 10px; font-family: 'JetBrains Mono', monospace; text-align: left; width: 100%; color: var(--text-secondary);">--</span>
+            </div>
+            <div class="gpu-stat-pill" style="flex-direction: column; align-items: flex-start; gap: 4px; border-bottom: none; padding-bottom: 0;">
+              <span class="gpu-stat-label" style="font-size: 10px; opacity: 0.6;">CPU Processor</span>
+              <span class="gpu-stat-val" id="gpuSpecCpu" style="font-size: 11px; font-weight: 500; text-align: left; width: 100%;">--</span>
             </div>
           </div>
         </div>
@@ -1210,9 +1261,19 @@ function esc(s) {
   return div.innerHTML;
 }
 
+function fmtSpeed(kbps, prefix = "") {
+  if (kbps === undefined || kbps === null) return prefix + "0 KB/s";
+  if (kbps >= 1024) {
+    return prefix + (kbps / 1024).toFixed(1) + " MB/s";
+  }
+  return prefix + kbps.toFixed(0) + " KB/s";
+}
+
 async function refreshGpu() {
   try {
     const gpu = await (await api("/v1/gpu")).json();
+    
+    // GPU Stats
     document.getElementById("gpuName").textContent = gpu.name;
     document.getElementById("gpuUtil").textContent = gpu.utilization_pct + "%";
     document.getElementById("gpuUtilBar").style.width = gpu.utilization_pct + "%";
@@ -1220,20 +1281,47 @@ async function refreshGpu() {
     const vramPct = (gpu.memory_used_mb / gpu.memory_total_mb) * 100;
     document.getElementById("gpuVramBar").style.width = vramPct + "%";
     
-    // Hardware health sub-pills
+    // CPU & RAM Stats
+    document.getElementById("sysCpu").textContent = gpu.cpu_utilization_pct + "%";
+    document.getElementById("sysCpuBar").style.width = gpu.cpu_utilization_pct + "%";
+    document.getElementById("sysRam").textContent = `${gpu.ram_used_gb.toFixed(1)} / ${gpu.ram_total_gb.toFixed(1)} GB`;
+    const ramPct = (gpu.ram_used_gb / gpu.ram_total_gb) * 100;
+    document.getElementById("sysRamBar").style.width = ramPct + "%";
+
+    // Network & Disk Stats
+    document.getElementById("sysNetDown").textContent = fmtSpeed(gpu.net_download_kbps, "↓ ");
+    document.getElementById("sysNetUp").textContent = fmtSpeed(gpu.net_upload_kbps, "↑ ");
+    document.getElementById("sysDiskRead").textContent = fmtSpeed(gpu.disk_read_kbps, "📖 ");
+    document.getElementById("sysDiskWrite").textContent = fmtSpeed(gpu.disk_write_kbps, "✍️ ");
+
+    // GPU Health
     document.getElementById("gpuTemp").textContent = gpu.temperature_c !== null ? `🔥 ${gpu.temperature_c}°C` : "🔥 --°C";
     document.getElementById("gpuFan").textContent = gpu.fan_speed_pct !== null ? `🌀 ${gpu.fan_speed_pct}%` : "🌀 --%";
-    
     const powerDraw = gpu.power_draw_w !== null ? gpu.power_draw_w.toFixed(0) : "--";
     const powerLimit = gpu.power_limit_w !== null ? gpu.power_limit_w.toFixed(0) : "--";
     document.getElementById("gpuPower").textContent = `⚡ ${powerDraw} / ${powerLimit} W`;
+
+    // Specs Tab
+    document.getElementById("gpuSpecDriverCuda").textContent = `${gpu.gpu_driver_version} / CUDA ${gpu.gpu_cuda_version}`;
+    document.getElementById("gpuSpecTorch").textContent = `${gpu.torch_version} | CUDA Available: ${gpu.torch_cuda_available ? "Yes" : "No"}`;
+    document.getElementById("gpuSpecCpu").textContent = `${gpu.cpu_model} (${gpu.cpu_cores} cores)`;
   } catch (e) {
-    document.getElementById("gpuName").textContent = "(GPU status unavailable)";
+    document.getElementById("gpuName").textContent = "(System status unavailable)";
     document.getElementById("gpuUtil").textContent = "0%";
     document.getElementById("gpuUtilBar").style.width = "0%";
     document.getElementById("gpuVram").textContent = "0 / 0 MB";
     document.getElementById("gpuVramBar").style.width = "0%";
     
+    document.getElementById("sysCpu").textContent = "0%";
+    document.getElementById("sysCpuBar").style.width = "0%";
+    document.getElementById("sysRam").textContent = "0.0 / 0.0 GB";
+    document.getElementById("sysRamBar").style.width = "0%";
+
+    document.getElementById("sysNetDown").textContent = "↓ 0 KB/s";
+    document.getElementById("sysNetUp").textContent = "↑ 0 KB/s";
+    document.getElementById("sysDiskRead").textContent = "📖 0 KB/s";
+    document.getElementById("sysDiskWrite").textContent = "✍️ 0 KB/s";
+
     document.getElementById("gpuTemp").textContent = "🔥 --°C";
     document.getElementById("gpuFan").textContent = "🌀 --%";
     document.getElementById("gpuPower").textContent = "⚡ -- / -- W";
@@ -2034,6 +2122,8 @@ async function refreshDetail(fromTick = false) {
     detailFetchInProgress = false;
   }
 }
+
+
 
 async function tick() {
   // GPU and Jobs fetched in parallel — both are independent of each other

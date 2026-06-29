@@ -27,6 +27,171 @@ from gpu_server.schemas import (
 from gpu_server.server_info import FEATURES, VERSION
 from gpu_server.uploads import upload_manager
 
+import time
+
+class SystemStatsMonitor:
+    def __init__(self):
+        self.last_time = time.time()
+        self.last_net_rx = 0
+        self.last_net_tx = 0
+        self.last_disk_read = 0
+        self.last_disk_write = 0
+        self.cpu_last_total = 0
+        self.cpu_last_idle = 0
+        
+        self.cpu_model = "Unknown CPU"
+        self.cpu_cores = 1
+        self.torch_version = "Not Installed"
+        self.torch_cuda_available = False
+        self.gpu_cuda_version = "Unknown"
+        self._load_cpu_specs()
+        self._load_torch_info()
+        self._load_cuda_version()
+        
+    def _load_cpu_specs(self):
+        try:
+            with open("/proc/cpuinfo", "r") as f:
+                lines = f.readlines()
+            cores = 0
+            for line in lines:
+                if line.startswith("model name"):
+                    self.cpu_model = line.split(":")[1].strip()
+                if line.startswith("processor"):
+                    cores += 1
+            self.cpu_cores = cores
+        except Exception:
+            pass
+
+    def _load_torch_info(self):
+        try:
+            import torch
+            self.torch_version = torch.__version__
+            self.torch_cuda_available = torch.cuda.is_available()
+            if self.torch_cuda_available and torch.version.cuda:
+                self.torch_version += f" (CUDA {torch.version.cuda})"
+        except Exception:
+            pass
+
+    def _load_cuda_version(self):
+        try:
+            # Query nvidia-smi once to parse the CUDA version header
+            out = subprocess.check_output(["nvidia-smi"], text=True, timeout=5)
+            # CUDA version is usually on the first or second line, look for 'CUDA Version: XX.X'
+            for line in out.splitlines():
+                if "CUDA Version:" in line:
+                    parts = line.split("CUDA Version:")
+                    if len(parts) == 2:
+                        self.gpu_cuda_version = parts[1].split()[0].strip()
+                        break
+        except Exception:
+            pass
+
+    def get_stats(self):
+        now = time.time()
+        dt = now - self.last_time
+        if dt <= 0:
+            dt = 0.1
+        self.last_time = now
+        
+        # 1. CPU Usage
+        cpu_util = 0
+        try:
+            with open("/proc/stat", "r") as f:
+                cpu_line = f.readline().split()
+            cpu_times = [int(x) for x in cpu_line[1:5]]
+            idle = cpu_times[3]
+            total = sum(cpu_times)
+            
+            diff_total = total - self.cpu_last_total
+            diff_idle = idle - self.cpu_last_idle
+            if diff_total > 0:
+                cpu_util = int(((diff_total - diff_idle) / diff_total) * 100)
+            
+            self.cpu_last_total = total
+            self.cpu_last_idle = idle
+        except Exception:
+            pass
+            
+        # 2. RAM Usage
+        ram_total = 16.0
+        ram_used = 0.0
+        try:
+            with open("/proc/meminfo", "r") as f:
+                lines = f.readlines()
+            mem_info = {}
+            for line in lines:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    mem_info[parts[0].strip()] = int(parts[1].split()[0])
+            
+            total_kb = mem_info.get("MemTotal", 0)
+            avail_kb = mem_info.get("MemAvailable", total_kb)
+            ram_total = round(total_kb / (1024 * 1024), 1)
+            ram_used = round((total_kb - avail_kb) / (1024 * 1024), 1)
+        except Exception:
+            pass
+            
+        # 3. Network Traffic
+        net_down = 0.0
+        net_up = 0.0
+        try:
+            with open("/proc/net/dev", "r") as f:
+                lines = f.readlines()
+            total_rx = 0
+            total_tx = 0
+            for line in lines[2:]:
+                parts = line.split()
+                if len(parts) > 9:
+                    total_rx += int(parts[1])
+                    total_tx += int(parts[8])
+            
+            if self.last_net_rx > 0:
+                net_down = round(((total_rx - self.last_net_rx) / 1024) / dt, 1)
+                net_up = round(((total_tx - self.last_net_tx) / 1024) / dt, 1)
+            
+            self.last_net_rx = total_rx
+            self.last_net_tx = total_tx
+        except Exception:
+            pass
+            
+        # 4. Disk Activity
+        disk_read = 0.0
+        disk_write = 0.0
+        try:
+            with open("/proc/diskstats", "r") as f:
+                lines = f.readlines()
+            total_read_sectors = 0
+            total_write_sectors = 0
+            for line in lines:
+                parts = line.split()
+                if len(parts) > 9:
+                    total_read_sectors += int(parts[5])
+                    total_write_sectors += int(parts[9])
+                    
+            total_read_bytes = total_read_sectors * 512
+            total_write_bytes = total_write_sectors * 512
+            
+            if self.last_disk_read > 0:
+                disk_read = round(((total_read_bytes - self.last_disk_read) / 1024) / dt, 1)
+                disk_write = round(((total_write_bytes - self.last_disk_write) / 1024) / dt, 1)
+                
+            self.last_disk_read = total_read_bytes
+            self.last_disk_write = total_write_bytes
+        except Exception:
+            pass
+            
+        return {
+            "cpu_util": cpu_util,
+            "ram_total": ram_total,
+            "ram_used": ram_used,
+            "net_down": net_down,
+            "net_up": net_up,
+            "disk_read": disk_read,
+            "disk_write": disk_write,
+        }
+
+sys_monitor = SystemStatsMonitor()
+
 app = FastAPI(
     title="remote-gpu training server",
     description=(
@@ -176,14 +341,17 @@ def dashboard():
     return _DASHBOARD_HTML
 
 
-@app.get("/v1/gpu", response_model=GPUStatusResponse, summary="Current GPU name, VRAM, utilization, temperature, fan speed, and power")
+@app.get("/v1/gpu", response_model=GPUStatusResponse, summary="Current GPU name, VRAM, utilization, temperature, fan speed, power, and system resources")
 def gpu_status(_: None = Depends(require_token)):
-    """Queries nvidia-smi for a live snapshot of the GPU this server controls."""
+    """Queries nvidia-smi for a live snapshot of the GPU, and reads system resources from /proc."""
+    # Fetch system CPU, RAM, Network and Disk stats
+    stats = sys_monitor.get_stats()
+    
     try:
         out = subprocess.check_output(
             [
                 "nvidia-smi",
-                "--query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu,fan.speed,power.draw,power.limit",
+                "--query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu,fan.speed,power.draw,power.limit,driver_version",
                 "--format=csv,noheader,nounits",
             ],
             text=True,
@@ -194,13 +362,11 @@ def gpu_status(_: None = Depends(require_token)):
             raise ValueError("No GPU details returned by nvidia-smi")
         parts = [x.strip() for x in lines[0].split(",")]
         
-        # Parse standard parameters
         name = parts[0]
         mem_total = int(parts[1])
         mem_used = int(parts[2])
         util = int(parts[3])
         
-        # Helper to parse optional/non-numeric strings (like "[Not Supported]")
         def safe_int(val):
             try:
                 return int(val)
@@ -217,6 +383,7 @@ def gpu_status(_: None = Depends(require_token)):
         fan = safe_int(parts[5]) if len(parts) > 5 else None
         power_draw = safe_float(parts[6]) if len(parts) > 6 else None
         power_limit = safe_float(parts[7]) if len(parts) > 7 else None
+        driver_version = parts[8] if len(parts) > 8 else "Unknown"
 
         return {
             "name": name,
@@ -227,8 +394,24 @@ def gpu_status(_: None = Depends(require_token)):
             "fan_speed_pct": fan,
             "power_draw_w": power_draw,
             "power_limit_w": power_limit,
+            # Server System Status
+            "cpu_utilization_pct": stats["cpu_util"],
+            "ram_total_gb": stats["ram_total"],
+            "ram_used_gb": stats["ram_used"],
+            "net_download_kbps": stats["net_down"],
+            "net_upload_kbps": stats["net_up"],
+            "disk_read_kbps": stats["disk_read"],
+            "disk_write_kbps": stats["disk_write"],
+            # Server Specs
+            "cpu_model": sys_monitor.cpu_model,
+            "cpu_cores": sys_monitor.cpu_cores,
+            "gpu_driver_version": driver_version,
+            "gpu_cuda_version": sys_monitor.gpu_cuda_version,
+            "torch_version": sys_monitor.torch_version,
+            "torch_cuda_available": sys_monitor.torch_cuda_available,
         }
     except FileNotFoundError:
+        # Mock/CPU Environment Fallback
         return {
             "name": "Mock/CPU Environment (nvidia-smi not found)",
             "memory_total_mb": 24564,
@@ -238,6 +421,21 @@ def gpu_status(_: None = Depends(require_token)):
             "fan_speed_pct": 30,
             "power_draw_w": 45.2,
             "power_limit_w": 250.0,
+            # Server System Status
+            "cpu_utilization_pct": stats["cpu_util"],
+            "ram_total_gb": stats["ram_total"],
+            "ram_used_gb": stats["ram_used"],
+            "net_download_kbps": stats["net_down"],
+            "net_upload_kbps": stats["net_up"],
+            "disk_read_kbps": stats["disk_read"],
+            "disk_write_kbps": stats["disk_write"],
+            # Server Specs
+            "cpu_model": sys_monitor.cpu_model,
+            "cpu_cores": sys_monitor.cpu_cores,
+            "gpu_driver_version": "535.104.05 (Mock)",
+            "gpu_cuda_version": "12.2",
+            "torch_version": sys_monitor.torch_version,
+            "torch_cuda_available": sys_monitor.torch_cuda_available,
         }
     except Exception as exc:
         raise HTTPException(500, f"nvidia-smi query failed: {exc}") from exc

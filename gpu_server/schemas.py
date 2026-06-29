@@ -176,6 +176,23 @@ class GPUStatusResponse(BaseModel):
     fan_speed_pct: int | None = Field(None, description="GPU fan speed percent (null if unavailable).")
     power_draw_w: float | None = Field(None, description="Current power draw in Watts (null if unavailable).")
     power_limit_w: float | None = Field(None, description="GPU power limit in Watts (null if unavailable).")
+    
+    # New Server System Status Fields
+    cpu_utilization_pct: int = Field(0, description="CPU usage percentage.")
+    ram_total_gb: float = Field(0.0, description="Total system RAM in GB.")
+    ram_used_gb: float = Field(0.0, description="Used system RAM in GB.")
+    net_download_kbps: float = Field(0.0, description="Network download speed in KB/s.")
+    net_upload_kbps: float = Field(0.0, description="Network upload speed in KB/s.")
+    disk_read_kbps: float = Field(0.0, description="Disk read speed in KB/s.")
+    disk_write_kbps: float = Field(0.0, description="Disk write speed in KB/s.")
+    
+    # New Server Specs Fields
+    cpu_model: str = Field("Unknown CPU", description="CPU processor model name.")
+    cpu_cores: int = Field(1, description="Number of CPU cores.")
+    gpu_driver_version: str = Field("Unknown", description="NVIDIA Driver version.")
+    gpu_cuda_version: str = Field("Unknown", description="NVIDIA CUDA version.")
+    torch_version: str = Field("Not Installed", description="Installed PyTorch version.")
+    torch_cuda_available: bool = Field(False, description="Whether PyTorch CUDA device is available.")
 
 
 class JobFileInfoExtended(BaseModel):
