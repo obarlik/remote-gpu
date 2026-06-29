@@ -17,6 +17,28 @@ from gpu_server.jobs.registry import CUSTOM_SCRIPT_TASK, is_known_task, resolve_
 from gpu_server.history_store import PartitionedHistoryStore
 
 _history = PartitionedHistoryStore(DATA_DIR / "history")
+TRASH_DIR = DATA_DIR / "trash"
+
+
+def move_to_trash(path: Path, job_id: str) -> None:
+    """Safely moves a deleted job output directory or files to trash directory instead of unlinking."""
+    if not path.exists():
+        return
+    TRASH_DIR.mkdir(parents=True, exist_ok=True)
+    dest = TRASH_DIR / job_id
+    if dest.exists():
+        import shutil
+        try:
+            shutil.rmtree(dest)
+        except Exception:
+            pass
+    try:
+        import shutil
+        shutil.move(str(path), str(dest))
+        (dest / ".trashed_at").write_text(str(time.time()), encoding="utf-8")
+        print(f"Trash: Moved job {job_id} output directory to trash.")
+    except Exception as e:
+        print(f"Trash: Failed to move {path} to trash: {e}")
 
 
 class Job:
@@ -446,30 +468,62 @@ class JobQueue:
 
         if policy == "delete_all":
             try:
-                import shutil
                 if job.output_dir.exists():
-                    shutil.rmtree(job.output_dir)
-                    print(f"Immediate cleanup: Deleted output directory for job {job.id}")
+                    move_to_trash(job.output_dir, job.id)
             except Exception as e:
-                print(f"Failed to delete all files for job {job.id}: {e}")
+                print(f"Failed to move job {job.id} output dir to trash: {e}")
         elif policy == "delete_artifacts":
             try:
                 keep_files = {"log.txt", "params.json", "metrics.jsonl"}
                 if job.output_dir.exists():
+                    trash_job_dir = TRASH_DIR / job.id
+                    trash_job_dir.mkdir(parents=True, exist_ok=True)
+                    (trash_job_dir / ".trashed_at").write_text(str(time.time()), encoding="utf-8")
                     for item in job.output_dir.iterdir():
-                        if item.is_file() and item.name not in keep_files:
-                            item.unlink()
-                        elif item.is_dir():
-                            import shutil
-                            shutil.rmtree(item)
-                    print(f"Immediate cleanup: Deleted non-log artifacts for job {job.id}")
+                        if item.name in keep_files or item.name == ".trashed_at":
+                            continue
+                        import shutil
+                        try:
+                            shutil.move(str(item), str(trash_job_dir / item.name))
+                        except Exception as move_err:
+                            print(f"Trash: Failed to move artifact {item.name} to trash: {move_err}")
+                    print(f"Immediate cleanup: Trashed non-log artifacts for job {job.id}")
             except Exception as e:
-                print(f"Failed to delete artifacts for job {job.id}: {e}")
+                print(f"Failed to move artifacts for job {job.id} to trash: {e}")
+
+    def _purge_stale_trash(self) -> None:
+        """Permanently purges items from the trash folder if they are older than 24 hours."""
+        if not TRASH_DIR.exists():
+            return
+        now = time.time()
+        # Keep trashed items for 24 hours before permanent deletion
+        TRASH_TTL_SECONDS = 24 * 3600
+        for item in TRASH_DIR.iterdir():
+            if item.is_dir():
+                try:
+                    trashed_at_file = item / ".trashed_at"
+                    if trashed_at_file.is_file():
+                        trashed_at = float(trashed_at_file.read_text(encoding="utf-8").strip())
+                    else:
+                        trashed_at = item.stat().st_mtime
+                    if now - trashed_at > TRASH_TTL_SECONDS:
+                        import shutil
+                        shutil.rmtree(item)
+                        print(f"Trash: Permanently purged stale trash folder for job {item.name}")
+                except Exception as e:
+                    print(f"Trash: Failed to purge stale trash item {item.name}: {e}")
 
     def _retention_cleaner_loop(self) -> None:
         while True:
             # Scan every 5 minutes (300 seconds)
             time.sleep(300)
+            
+            # Clean up stale trash first
+            try:
+                self._purge_stale_trash()
+            except Exception as e:
+                print(f"Trash: Error during stale trash purge: {e}")
+
             now = time.time()
             jobs_to_clean = []
             
@@ -497,12 +551,10 @@ class JobQueue:
                                 
             for job in jobs_to_clean:
                 try:
-                    import shutil
                     if job.output_dir.exists():
-                        shutil.rmtree(job.output_dir)
-                        print(f"TTL cleanup: Deleted output directory for job {job.id}")
+                        move_to_trash(job.output_dir, job.id)
                 except Exception as e:
-                    print(f"Failed to TTL clean job {job.id}: {e}")
+                    print(f"Failed to TTL clean job {job.id} to trash: {e}")
 
 
 job_queue = JobQueue()
