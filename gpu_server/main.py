@@ -6,7 +6,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, Query
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
@@ -782,3 +782,78 @@ def cancel_job(job_id: str, _: None = Depends(require_token)):
         raise HTTPException(500, "Failed to cancel the job")
         
     return {"cancelled": True}
+
+
+@app.websocket("/v1/jobs/{job_id}/terminal")
+async def job_terminal_ws(websocket: WebSocket, job_id: str):
+    token = websocket.query_params.get("token")
+    if not token:
+        auth_hdr = websocket.headers.get("authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            token = auth_hdr.split(" ")[1]
+            
+    import hmac
+    from gpu_server.config import AUTH_TOKEN
+    if AUTH_TOKEN:
+        if not token or not hmac.compare_digest(token, AUTH_TOKEN):
+            await websocket.close(code=4001)
+            return
+
+    job = job_queue.get(job_id)
+    if job is None:
+        await websocket.close(code=4004)
+        return
+
+    await websocket.accept()
+
+    # 1. Send terminal backlog to initialize the client screen
+    import asyncio
+    with job.ws_lock:
+        if job.terminal_backlog:
+            await websocket.send_bytes(bytes(job.terminal_backlog))
+
+    # 2. Register a thread-safe Queue to receive real-time updates
+    import queue
+    q = queue.Queue()
+    with job.ws_lock:
+        job.ws_queues.add(q)
+
+    # 3. Define helper to send from Queue to WebSocket
+    async def ws_writer():
+        loop = asyncio.get_running_loop()
+        try:
+            while True:
+                data = await loop.run_in_executor(None, q.get)
+                if data is None:
+                    break
+                await websocket.send_bytes(data)
+        except Exception:
+            pass
+
+    # 4. Define helper to receive from WebSocket and write to job.send_input()
+    async def ws_reader():
+        try:
+            while True:
+                data = await websocket.receive_text()
+                job.send_input(data)
+        except Exception:
+            pass
+
+    writer_task = asyncio.create_task(ws_writer())
+    reader_task = asyncio.create_task(ws_reader())
+
+    try:
+        await asyncio.wait(
+            [writer_task, reader_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+    finally:
+        with job.ws_lock:
+            if q in job.ws_queues:
+                job.ws_queues.remove(q)
+        writer_task.cancel()
+        reader_task.cancel()
+        try:
+            await websocket.close()
+        except Exception:
+            pass

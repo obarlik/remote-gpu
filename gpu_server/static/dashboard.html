@@ -6,6 +6,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
 <style>
   :root {
     --bg-gradient: radial-gradient(circle at 50% 0%, #1a1528 0%, #0d0a13 100%);
@@ -1122,8 +1124,9 @@
     <div class="tab-container">
       <div class="tab-header">
         <div class="tab-buttons">
-          <button class="tab-btn active" onclick="switchSubTab('logs')">Console Output</button>
-          <button class="tab-btn" onclick="switchSubTab('files')">Output Files</button>
+          <button class="tab-btn active" id="btn-subtab-logs" onclick="switchSubTab('logs')">Console Output</button>
+          <button class="tab-btn" id="btn-subtab-terminal" onclick="switchSubTab('terminal')">Interactive Terminal</button>
+          <button class="tab-btn" id="btn-subtab-files" onclick="switchSubTab('files')">Output Files</button>
         </div>
         
         <!-- Controls for Logs Tab -->
@@ -1147,6 +1150,13 @@
             ⬆️ Load older logs...
           </button>
           <div id="logLinesContainer" style="flex: 1;">Select a job to view stdout/stderr logs...</div>
+        </div>
+      </div>
+
+      <!-- Tab Content: Terminal -->
+      <div id="tabContentTerminal" class="tab-content">
+        <div class="terminal-body" style="display: flex; flex-direction: column; background: #000; padding: 10px; border-radius: 8px; overflow: hidden; height: 100%;">
+          <div id="terminalContainer" style="flex: 1; min-height: 350px;"></div>
         </div>
       </div>
 
@@ -1895,13 +1905,15 @@ function switchSubTab(tabName) {
   // Update button active state
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.classList.remove("active");
-    if (btn.textContent.toLowerCase().includes(tabName)) {
-      btn.classList.add("active");
-    }
   });
+  const activeBtn = document.getElementById("btn-subtab-" + tabName);
+  if (activeBtn) {
+    activeBtn.classList.add("active");
+  }
   
   // Show / Hide content panes
   document.getElementById("tabContentLogs").classList.remove("active");
+  document.getElementById("tabContentTerminal").classList.remove("active");
   document.getElementById("tabContentFiles").classList.remove("active");
   
   document.getElementById("logTabControls").style.display = "none";
@@ -1910,6 +1922,9 @@ function switchSubTab(tabName) {
   if (tabName === "logs") {
     document.getElementById("tabContentLogs").classList.add("active");
     document.getElementById("logTabControls").style.display = "flex";
+  } else if (tabName === "terminal") {
+    document.getElementById("tabContentTerminal").classList.add("active");
+    initJobTerminal(selectedJobId);
   } else if (tabName === "files") {
     document.getElementById("tabContentFiles").classList.add("active");
     document.getElementById("fileTabControls").style.display = "flex";
@@ -2243,6 +2258,68 @@ function closeTvModal() {
   if (selectedJobId) {
     refreshDetail();
   }
+}
+
+let currentTerminal = null;
+let terminalSocket = null;
+
+function initJobTerminal(jobId) {
+  if (!jobId) return;
+
+  // Clean up any existing terminal connection
+  if (terminalSocket) {
+    terminalSocket.close();
+    terminalSocket = null;
+  }
+  
+  const container = document.getElementById("terminalContainer");
+  container.innerHTML = ""; // Clear
+  
+  // Create terminal
+  currentTerminal = new Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: "'JetBrains Mono', monospace",
+    theme: {
+      background: "#000000",
+      foreground: "#f3f1f6",
+      cursor: "#bb86fc"
+    }
+  });
+  
+  currentTerminal.open(container);
+  currentTerminal.write("Connecting to job " + jobId + " interactive terminal...\r\n");
+
+  // Determine ws protocol and host
+  const loc = window.location;
+  const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${proto}//${loc.host}/v1/jobs/${jobId}/terminal?token=${getToken()}`;
+  
+  terminalSocket = new WebSocket(wsUrl);
+  terminalSocket.binaryType = "arraybuffer";
+
+  terminalSocket.onopen = () => {
+    currentTerminal.write("\r\n--- Connected to virtual terminal ---\r\n\r\n");
+  };
+
+  terminalSocket.onmessage = (event) => {
+    const data = new Uint8Array(event.data);
+    currentTerminal.write(data);
+  };
+
+  terminalSocket.onclose = (event) => {
+    currentTerminal.write("\r\n\r\n--- Terminal connection closed (Code: " + event.code + ") ---\r\n");
+  };
+
+  terminalSocket.onerror = (err) => {
+    currentTerminal.write("\r\n\r\n--- Terminal error occurred ---\r\n");
+  };
+
+  currentTerminal.onData((data) => {
+    if (terminalSocket && terminalSocket.readyState === WebSocket.OPEN) {
+      terminalSocket.send(data);
+    }
+  });
 }
 
 // Auto-refit charts on window resize

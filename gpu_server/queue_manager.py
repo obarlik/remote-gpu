@@ -6,6 +6,9 @@ import subprocess
 import threading
 import time
 import uuid
+import pty
+import select
+import errno
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +46,12 @@ class Job:
         self.process: subprocess.Popen | None = None
         self.retention = retention
         self.lock = threading.Lock()
+        
+        # Virtual Terminal & WebSocket properties
+        self.ws_queues = set()
+        self.ws_lock = threading.Lock()
+        self.terminal_backlog = bytearray()
+        self.master_fd = None
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> "Job":
@@ -70,6 +79,12 @@ class Job:
         job.log_path = job.output_dir / "log.txt"
         job.process = None
         job.lock = threading.Lock()
+        
+        # Historical jobs terminal properties
+        job.ws_queues = set()
+        job.ws_lock = threading.Lock()
+        job.terminal_backlog = bytearray()
+        job.master_fd = None
         return job
 
     def to_dict(self) -> dict[str, Any]:
@@ -94,6 +109,28 @@ class Job:
             "output_dir": str(self.output_dir),
             "retention": ret_val,
         }
+
+    def send_input(self, data: str) -> None:
+        """Writes interactive keyboard input data (keystrokes) to the PTY master."""
+        with self.lock:
+            if self.master_fd is not None:
+                try:
+                    os.write(self.master_fd, data.encode("utf-8"))
+                except Exception as e:
+                    print(f"Failed to write input to job {self.id}: {e}")
+
+    def broadcast_output(self, data: bytes) -> None:
+        """Appends output data to backlog and forwards it to all active WebSocket clients."""
+        with self.ws_lock:
+            self.terminal_backlog.extend(data)
+            if len(self.terminal_backlog) > 100000:
+                self.terminal_backlog = self.terminal_backlog[-100000:]
+            
+            for q in list(self.ws_queues):
+                try:
+                    q.put_nowait(data)
+                except Exception:
+                    pass
 
 
 class JobQueue:
@@ -255,38 +292,101 @@ class JobQueue:
             job.status = "running"
             job.started_at = time.time()
 
-        # Without this, a Python child on Windows whose stdout is redirected
-        # to a file falls back to the system ANSI codepage (e.g. cp1252),
-        # which can't encode non-ASCII text (Turkish, generated samples,
-        # etc.) and crashes the job with UnicodeEncodeError instead of
-        # logging it. Force UTF-8 regardless of locale.
         repo_root = Path(__file__).resolve().parent.parent
         child_env = {
             **os.environ,
             "PYTHONUTF8": "1",
             "PYTHONIOENCODING": "utf-8",
-            # Run with cwd=output_dir (below) so a script that writes a
-            # relative path lands in its own job folder instead of polluting
-            # the repo root — but built-in tasks still need `-m gpu_server.
-            # jobs.X` to resolve, which relies on cwd normally; PYTHONPATH
-            # keeps that working with cwd no longer pointing at the repo.
             "PYTHONPATH": os.pathsep.join(filter(None, [str(repo_root), os.environ.get("PYTHONPATH")])),
         }
 
-        with open(job.log_path, "w", encoding="utf-8") as log_file:
-            popen_kwargs = {
-                "stdout": log_file,
-                "stderr": subprocess.STDOUT,
-                "cwd": str(job.output_dir),
-                "env": child_env,
-            }
-            if os.name != "nt":
-                popen_kwargs["start_new_session"] = True
+        # Open pseudoterminal master/slave pair
+        master_fd, slave_fd = pty.openpty()
+        job.master_fd = master_fd
 
+        popen_kwargs = {
+            "stdin": slave_fd,
+            "stdout": slave_fd,
+            "stderr": slave_fd,
+            "cwd": str(job.output_dir),
+            "env": child_env,
+        }
+        if os.name != "nt":
+            popen_kwargs["start_new_session"] = True
+
+        try:
             job.process = subprocess.Popen(cmd, **popen_kwargs)
-            return_code = job.process.wait()
+        except Exception as exc:
+            os.close(master_fd)
+            os.close(slave_fd)
+            job.master_fd = None
+            raise exc
+
+        # Close slave_fd in parent process so it receives EOF when child closes it
+        os.close(slave_fd)
+
+        # Background PTY output reader loop
+        total_log_bytes = 0
+        MAX_LOG_BYTES = 10 * 1024 * 1024  # 10MB limit to prevent disk bloating
+        log_capped_msg_written = False
+
+        with open(job.log_path, "wb") as log_file:
+            while True:
+                # Wait for PTY master_fd to become readable
+                r, _, _ = select.select([master_fd], [], [], 0.1)
+                if master_fd in r:
+                    try:
+                        data = os.read(master_fd, 8192)
+                        if not data:
+                            break  # EOF
+                    except OSError as e:
+                        if e.errno == errno.EIO:
+                            break
+                        raise e
+
+                    # Broadcast output bytes to all active terminal websockets
+                    job.broadcast_output(data)
+
+                    # Write to disk log.txt up to 10MB limit
+                    if total_log_bytes < MAX_LOG_BYTES:
+                        log_file.write(data)
+                        total_log_bytes += len(data)
+                    elif not log_capped_msg_written:
+                        cap_msg = b"\n*** LOG SIZE LIMIT EXCEEDED (10MB). FURTHER OUTPUT STREAMED ONLY VIA REAL-TIME WEBSOCKETS TO PREVENT DISK BLOAT ***\n"
+                        log_file.write(cap_msg)
+                        log_capped_msg_written = True
+
+                # Check if process finished
+                if job.process.poll() is not None:
+                    # Drain any remaining bytes from master_fd
+                    while True:
+                        r_rem, _, _ = select.select([master_fd], [], [], 0.0)
+                        if master_fd in r_rem:
+                            try:
+                                data = os.read(master_fd, 8192)
+                                if not data:
+                                    break
+                                job.broadcast_output(data)
+                                if total_log_bytes < MAX_LOG_BYTES:
+                                    log_file.write(data)
+                                    total_log_bytes += len(data)
+                            except OSError as e:
+                                if e.errno == errno.EIO:
+                                    break
+                                raise e
+                        else:
+                            break
+                    break
+
+        # Cleanup PTY master descriptor
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
 
         with job.lock:
+            job.master_fd = None
+            return_code = job.process.wait()
             job.finished_at = time.time()
             if job.status == "cancelled":
                 pass
