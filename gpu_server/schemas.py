@@ -219,4 +219,5 @@ class JobFileInfoExtended(BaseModel):
     size_bytes: int = Field(..., description="File size in bytes.")
     mime_type: str = Field(..., description="Detected MIME type of the file for rendering previews.")
     modified_at: float = Field(..., description="Last modification timestamp.")
+    trashed: bool = Field(default=False, description="Whether this file is currently in the 48-hour Recycle Bin.")
 

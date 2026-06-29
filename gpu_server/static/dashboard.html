@@ -1164,8 +1164,12 @@
       </div>
 
       <!-- Tab Content: Files -->
-      <div id="tabContentFiles" class="tab-content">
-        <div class="file-table-scroll-container">
+      <div id="tabContentFiles" class="tab-content" style="display: flex; flex-direction: column; gap: 8px; height: 100%;">
+        <div id="restoreTrashBar" style="display: none; align-items: center; justify-content: space-between; background: rgba(187, 134, 252, 0.08); border: 1px solid rgba(187, 134, 252, 0.2); border-radius: 8px; padding: 6px 12px; flex-shrink: 0; gap: 10px;">
+          <span style="font-size: 11px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px;">🗑️ Some files are in the Recycle Bin (stored for 48 hours). You can still view or download them.</span>
+          <button id="restoreBtn" class="terminal-btn" style="border-color: #bb86fc; color: #bb86fc; padding: 2px 8px; font-size: 10px; flex-shrink: 0;" onclick="restoreJobFiles()">🔄 Restore Files</button>
+        </div>
+        <div class="file-table-scroll-container" style="flex: 1; overflow-y: auto;">
           <table class="file-table" id="fileListTable">
             <thead>
               <tr>
@@ -1989,6 +1993,9 @@ async function refreshJobFiles() {
   const tbody = document.getElementById("fileListBody");
   tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 20px;">Loading output directory files...</td></tr>`;
   
+  const bar = document.getElementById("restoreTrashBar");
+  if (bar) bar.style.display = "none";
+  
   try {
     const res = await api(`/v1/jobs/${selectedJobId}/files`);
     const files = await res.json();
@@ -1999,7 +2006,12 @@ async function refreshJobFiles() {
       return;
     }
     
+    let hasTrashed = false;
+    
     files.forEach(file => {
+      if (file.trashed) {
+        hasTrashed = true;
+      }
       const tr = document.createElement("tr");
       tr.className = "file-row";
       
@@ -2023,11 +2035,19 @@ async function refreshJobFiles() {
         ? `<button class="terminal-btn" onclick="previewFile('${esc(file.filename)}', '${file.mime_type}')" style="padding: 2px 8px; font-size:10px; margin-right: 4px;">View</button>`
         : "";
         
+      let nameStyle = "";
+      let trashBadge = "";
+      if (file.trashed) {
+        nameStyle = "font-style: italic; opacity: 0.65;";
+        trashBadge = `<span style="font-size: 9px; background: rgba(244, 67, 54, 0.12); color: #f44336; border: 1px solid rgba(244, 67, 54, 0.25); border-radius: 4px; padding: 1px 4px; margin-left: 6px;" title="This file is currently in the Recycle Bin (will be permanently deleted after 48h).">🗑️ Trashed</span>`;
+      }
+        
       tr.innerHTML = `
         <td>
-          <div class="file-name-cell">
+          <div class="file-name-cell" style="${nameStyle}">
             <span class="file-icon">${icon}</span>
             <span>${esc(file.filename)}</span>
+            ${trashBadge}
           </div>
         </td>
         <td style="text-align: right; font-family: monospace;">${sizeStr}</td>
@@ -2040,6 +2060,10 @@ async function refreshJobFiles() {
       `;
       tbody.appendChild(tr);
     });
+    
+    if (bar) {
+      bar.style.display = hasTrashed ? "flex" : "none";
+    }
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--status-failed); padding: 20px;">Failed to load files: ${esc(e.message)}</td></tr>`;
   }
@@ -2405,6 +2429,29 @@ function showWhatsNew() {
 
 function closeWhatsNewModal() {
   document.getElementById("whatsNewModal").classList.remove("active");
+}
+
+async function restoreJobFiles() {
+  if (!selectedJobId) return;
+  const btn = document.getElementById("restoreBtn");
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Restoring...";
+  try {
+    const res = await api(`/v1/jobs/${selectedJobId}/restore`, { method: "POST" });
+    if (res.ok) {
+      alert("Job files successfully restored from Recycle Bin!");
+      refreshJobFiles();
+    } else {
+      const err = await res.json();
+      alert("Restore failed: " + (err.detail || "No files found in trash."));
+    }
+  } catch (e) {
+    alert("Restore failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
 }
 
 // Fetch server version on load

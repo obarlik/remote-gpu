@@ -20,10 +20,53 @@ _history = PartitionedHistoryStore(DATA_DIR / "history")
 TRASH_DIR = DATA_DIR / "trash"
 
 
-def move_to_trash(path: Path, job_id: str) -> None:
-    """Safely moves a deleted job output directory or files to trash directory instead of unlinking."""
+def clean_temp_files(path: Path) -> None:
+    """Recursively deletes temporary (.tmp, .temp, .part, .lock) and hidden files to avoid trashing junk."""
     if not path.exists():
         return
+    if path.is_file():
+        if path.suffix.lower() in {".tmp", ".temp", ".part", ".lock"} or path.name.startswith("."):
+            try:
+                path.unlink()
+            except Exception:
+                pass
+        return
+    for item in list(path.iterdir()):
+        if item.is_file():
+            if item.suffix.lower() in {".tmp", ".temp", ".part", ".lock"} or (item.name.startswith(".") and item.name != ".trashed_at"):
+                try:
+                    item.unlink()
+                except Exception:
+                    pass
+        elif item.is_dir():
+            clean_temp_files(item)
+            try:
+                if not any(item.iterdir()):
+                    item.rmdir()
+            except Exception:
+                pass
+
+
+def move_to_trash(path: Path, job_id: str) -> None:
+    """Safely moves a deleted job output directory or files to trash directory after cleaning temp junk."""
+    if not path.exists():
+        return
+    
+    # Prune temporary/junk files first so they don't occupy trash space
+    try:
+        clean_temp_files(path)
+    except Exception as e:
+        print(f"Trash: Error pruning temporary files from {path}: {e}")
+
+    # If the directory is now completely empty after pruning, just delete it directly instead of trashing
+    try:
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+            print(f"Trash: Job {job_id} output was empty after temp cleanup, deleted directly.")
+            return
+    except Exception:
+        pass
+
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
     dest = TRASH_DIR / job_id
     if dest.exists():
@@ -474,6 +517,10 @@ class JobQueue:
                 print(f"Failed to move job {job.id} output dir to trash: {e}")
         elif policy == "delete_artifacts":
             try:
+                # First, permanently remove temporary files directly from output dir
+                if job.output_dir.exists():
+                    clean_temp_files(job.output_dir)
+                    
                 keep_files = {"log.txt", "params.json", "metrics.jsonl"}
                 if job.output_dir.exists():
                     trash_job_dir = TRASH_DIR / job.id
@@ -487,17 +534,25 @@ class JobQueue:
                             shutil.move(str(item), str(trash_job_dir / item.name))
                         except Exception as move_err:
                             print(f"Trash: Failed to move artifact {item.name} to trash: {move_err}")
+                            
+                    # Clean up trash_job_dir if it's empty
+                    if not any(trash_job_dir.iterdir()):
+                        import shutil
+                        try:
+                            shutil.rmtree(trash_job_dir)
+                        except Exception:
+                            pass
                     print(f"Immediate cleanup: Trashed non-log artifacts for job {job.id}")
             except Exception as e:
                 print(f"Failed to move artifacts for job {job.id} to trash: {e}")
 
     def _purge_stale_trash(self) -> None:
-        """Permanently purges items from the trash folder if they are older than 24 hours."""
+        """Permanently purges items from the trash folder if they are older than 48 hours."""
         if not TRASH_DIR.exists():
             return
         now = time.time()
-        # Keep trashed items for 24 hours before permanent deletion
-        TRASH_TTL_SECONDS = 24 * 3600
+        # Keep trashed items for 48 hours before permanent deletion
+        TRASH_TTL_SECONDS = 48 * 3600
         for item in TRASH_DIR.iterdir():
             if item.is_dir():
                 try:
@@ -555,6 +610,47 @@ class JobQueue:
                         move_to_trash(job.output_dir, job.id)
                 except Exception as e:
                     print(f"Failed to TTL clean job {job.id} to trash: {e}")
+
+    def restore_from_trash(self, job_id: str) -> bool:
+        """Restores a job's output directory/artifacts from the trash directory."""
+        trash_path = TRASH_DIR / job_id
+        if not trash_path.exists():
+            return False
+            
+        job = self.get(job_id)
+        if not job:
+            return False
+            
+        dest_path = job.output_dir
+        dest_path.mkdir(parents=True, exist_ok=True)
+        
+        import shutil
+        # Move all items back to output directory
+        for item in trash_path.iterdir():
+            if item.name == ".trashed_at":
+                continue
+            dest_item = dest_path / item.name
+            if dest_item.exists():
+                try:
+                    if dest_item.is_dir():
+                        shutil.rmtree(dest_item)
+                    else:
+                        dest_item.unlink()
+                except Exception:
+                    pass
+            try:
+                shutil.move(str(item), str(dest_item))
+            except Exception as e:
+                print(f"Trash: Failed to move {item.name} back to output: {e}")
+            
+        # Clean up empty trash dir
+        try:
+            shutil.rmtree(trash_path)
+        except Exception:
+            pass
+            
+        print(f"Trash: Restored job {job_id} files from trash.")
+        return True
 
 
 job_queue = JobQueue()

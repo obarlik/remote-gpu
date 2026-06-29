@@ -777,54 +777,97 @@ def get_job_metrics(job_id: str, _: None = Depends(require_token)):
     return records
 
 
+def guess_file_mime_type(filename: str) -> str:
+    mime_type, _ = mimetypes.guess_type(filename)
+    if mime_type is None:
+        if filename.endswith(".jsonl"):
+            mime_type = "application/x-jsonlines"
+        elif filename.endswith(".pt") or filename.endswith(".pth") or filename.endswith(".ckpt"):
+            mime_type = "application/octet-stream"
+        else:
+            mime_type = "text/plain"
+    return mime_type
+
+
 @app.get(
     "/v1/jobs/{job_id}/files",
     response_model=list[JobFileInfoExtended],
-    summary="List files available in the job's output dir",
+    summary="List files available in the job's active output dir or Recycle Bin",
 )
 def list_job_files(job_id: str, _: None = Depends(require_token)):
     job = job_queue.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     
+    from gpu_server.queue_manager import TRASH_DIR
     files_info = []
-    if not job.output_dir.exists():
-        return files_info
-        
-    for f in sorted(job.output_dir.iterdir()):
-        if f.is_file():
-            stat = f.stat()
-            # Guess MIME type
-            mime_type, _ = mimetypes.guess_type(str(f))
-            if mime_type is None:
-                # Fallback for common machine learning outputs
-                if f.name.endswith(".jsonl"):
-                    mime_type = "application/x-jsonlines"
-                elif f.name.endswith(".pt") or f.name.endswith(".pth") or f.name.endswith(".ckpt"):
-                    mime_type = "application/octet-stream"
-                else:
-                    mime_type = "text/plain"
-            
-            files_info.append({
-                "filename": f.name,
-                "size_bytes": stat.st_size,
-                "mime_type": mime_type,
-                "modified_at": stat.st_mtime
-            })
+    
+    # 1. Scan active output directory
+    if job.output_dir.exists():
+        for f in sorted(job.output_dir.iterdir()):
+            if f.is_file():
+                stat = f.stat()
+                mime_type = guess_file_mime_type(f.name)
+                files_info.append({
+                    "filename": f.name,
+                    "size_bytes": stat.st_size,
+                    "mime_type": mime_type,
+                    "modified_at": stat.st_mtime,
+                    "trashed": False
+                })
+                
+    # 2. Scan trash directory (merge results)
+    trash_path = TRASH_DIR / job_id
+    if trash_path.exists():
+        for f in sorted(trash_path.iterdir()):
+            if f.is_file() and f.name != ".trashed_at":
+                if any(x["filename"] == f.name for x in files_info):
+                    continue
+                stat = f.stat()
+                mime_type = guess_file_mime_type(f.name)
+                files_info.append({
+                    "filename": f.name,
+                    "size_bytes": stat.st_size,
+                    "mime_type": mime_type,
+                    "modified_at": stat.st_mtime,
+                    "trashed": True
+                })
+                
     return files_info
 
 
-@app.get("/v1/jobs/{job_id}/files/{filename}", summary="Download a result file from the job's output dir")
+@app.get("/v1/jobs/{job_id}/files/{filename}", summary="Download a result file from active output dir or Recycle Bin")
 def get_job_file(job_id: str, filename: str, _: None = Depends(require_token)):
     job = job_queue.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
-    if not job.output_dir.exists():
-        raise HTTPException(404, "Job output directory has been cleaned up by retention policy")
-    requested = (job.output_dir / filename).resolve()
-    if job.output_dir.resolve() not in requested.parents or not requested.is_file():
-        raise HTTPException(404, "File not found")
-    return FileResponse(str(requested))
+        
+    from gpu_server.queue_manager import TRASH_DIR
+    active_file = (job.output_dir / filename).resolve()
+    trash_file = (TRASH_DIR / job_id / filename).resolve()
+    
+    # Check active directory
+    if job.output_dir.exists() and job.output_dir.resolve() in active_file.parents and active_file.is_file():
+        return FileResponse(str(active_file))
+        
+    # Check trash directory
+    trash_dir_resolved = (TRASH_DIR / job_id).resolve()
+    if trash_dir_resolved.exists() and trash_dir_resolved in trash_file.parents and trash_file.is_file():
+        return FileResponse(str(trash_file))
+        
+    raise HTTPException(404, "File not found (it may have been permanently purged after 48 hours)")
+
+
+@app.post("/v1/jobs/{job_id}/restore", summary="Restore a job's deleted files/artifacts from the Recycle Bin")
+def restore_job_files(job_id: str, _: None = Depends(require_token)):
+    """Restores files/artifacts for a job from the 48-hour Recycle Bin (trash folder)
+    back to its active output directory, if they haven't been permanently purged yet."""
+    if not job_queue.restore_from_trash(job_id):
+        raise HTTPException(
+            status_code=404,
+            detail="No files found in trash for this job (they may have been permanently purged after 48 hours)."
+        )
+    return {"restored": True}
 
 
 @app.delete("/v1/jobs/{job_id}", summary="Cancel a queued job or kill a running one")
