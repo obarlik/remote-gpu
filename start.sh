@@ -26,5 +26,27 @@ fi
 nohup "$DIR/.venv-linux/bin/python" -m uvicorn gpu_server.main:app --host 0.0.0.0 --port 8077 > server_stdout.log 2> server_stderr.log &
 PID=$!
 echo $PID > server.pid
-echo "Server started in background with PID $PID. Logs: server_stdout.log"
-echo "Uvicorn running on http://127.0.0.1:8077 (Press CTRL+C to quit)"
+
+echo "Server process launched (PID: $PID). Waiting for port 8077 to accept connections..."
+
+# Poll the port until it is open or timeout at 15 seconds
+TIMEOUT=15
+ELAPSED=0
+PORT_OPEN=0
+
+while [ $ELAPSED -lt $TIMEOUT ]; do
+    if bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8077' 2>/dev/null; then
+        PORT_OPEN=1
+        break
+    fi
+    sleep 0.5
+    ELAPSED=$((ELAPSED + 1))
+done
+
+if [ $PORT_OPEN -eq 1 ]; then
+    echo "Server successfully started and listening on port 8077."
+    echo "Uvicorn running on http://127.0.0.1:8077 (Press CTRL+C to quit)"
+else
+    echo "Warning: Server was launched but port 8077 did not become active within 15 seconds."
+    echo "Check server_stderr.log for details."
+fi

@@ -84,6 +84,40 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+  .auth-box.collapsed input,
+  .auth-box.collapsed button:not(.key-badge) {
+    width: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+  .key-badge {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    background: rgba(187, 134, 252, 0.05);
+    border: 1px solid rgba(187, 134, 252, 0.2);
+    color: var(--accent);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  .key-badge:hover {
+    background: rgba(187, 134, 252, 0.15);
+    border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(187, 134, 252, 0.2);
+  }
+  .auth-box.collapsed .key-badge {
+    display: flex;
   }
   input[type="password"] {
     background: rgba(0, 0, 0, 0.3);
@@ -148,22 +182,31 @@
     transition: width 0.5s ease;
   }
 
-  /* Main Workspace Layout (Full Height Control Room Layout) */
-  .workspace {
-    display: grid;
-    grid-template-columns: 360px 1fr;
+  /* Main Workspace Layout (Full Height Control Room 3-Column Layout) */
+  .workspace-wrapper {
+    display: flex;
     gap: 20px;
-    height: calc(100vh - 100px); /* Fill the screen */
+    height: calc(100vh - 100px); /* Fill the screen height */
+    width: 100%;
     align-items: stretch;
     overflow: hidden;
   }
 
-  /* Jobs Table section */
-  .jobs-panel {
+  /* 1. Sütun (GPU + Jobs Queue) */
+  .sidebar-left {
+    width: 300px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: 16px;
     height: 100%;
+    overflow: hidden;
+  }
+  .jobs-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
     overflow: hidden;
   }
   .jobs-table-container {
@@ -308,9 +351,10 @@
     margin: 10px 0;
   }
   .focus-layout {
-    display: grid;
-    grid-template-columns: 1fr 180px;
-    gap: 16px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 12px;
   }
   .focus-main-panel {
     background: rgba(0, 0, 0, 0.25);
@@ -318,17 +362,24 @@
     border-radius: 12px;
     padding: 16px;
     position: relative;
-  }
-  .focus-main-panel canvas {
-    height: 280px;
-  }
-  .focus-sidebar {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .focus-main-panel canvas {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+  }
+  .focus-thumbnails-strip {
+    display: flex;
+    flex-direction: row;
     gap: 8px;
-    max-height: 350px;
-    overflow-y: auto;
-    padding-right: 4px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    flex-shrink: 0;
+    width: 100%;
   }
   .focus-thumb {
     background: rgba(0, 0, 0, 0.2);
@@ -337,13 +388,18 @@
     padding: 8px;
     cursor: pointer;
     transition: border-color 0.2s;
+    width: 160px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
   .focus-thumb.active {
     border-color: var(--accent);
     background: rgba(187, 134, 252, 0.05);
   }
   .focus-thumb canvas {
-    height: 40px;
+    height: 32px;
     margin-top: 4px;
   }
 
@@ -560,6 +616,28 @@
   .modal-overlay.active .modal-box {
     transform: scale(1);
   }
+  
+  /* Larger modal specifically for TV Mode Chart preview */
+  .tv-modal-box {
+    background: #171322;
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 1100px;
+    height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    transform: scale(0.95);
+    transition: transform 0.3s ease;
+    overflow: hidden;
+    padding: 20px;
+    gap: 16px;
+  }
+  .modal-overlay.active .tv-modal-box {
+    transform: scale(1);
+  }
+
   .modal-title-bar {
     padding: 16px 20px;
     border-bottom: 1px solid var(--panel-border);
@@ -614,45 +692,96 @@
     gap: 4px;
   }
 
-  /* Split Pane Layout Details */
-  .detail-panel {
+  /* 3 Sütunlu Panoramik Düzen Detayları */
+  .control-workspace {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .main-content-charts {
+    width: 300px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     height: 100%;
-    overflow: hidden;
-    gap: 16px;
-  }
-  
-  /* Flex chart containers */
-  #metricsGrid {
-    flex: 1;
-    min-height: 220px;
     overflow-y: auto;
+    gap: 16px;
     padding-right: 4px;
   }
-  #focusView {
+
+  .sidebar-right {
     flex: 1;
-    min-height: 220px;
-    overflow: hidden;
-  }
-  #defaultChartContainer {
-    flex: 1;
-    min-height: 220px;
-    overflow: hidden;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
   
-  /* Ensure canvas takes exact space */
+  /* Flex chart containers in Main Content */
+  #metricsGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+  }
+  #focusView {
+    width: 100%;
+    height: 100%;
+    min-height: 380px;
+    display: flex;
+    flex-direction: column;
+  }
+  #defaultChartContainer {
+    width: 100%;
+    height: 220px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  
+  /* Ensure charts behave responsively */
   .chart-section canvas {
-    max-height: 160px;
+    height: 180px !important;
+    max-height: 180px;
+    width: 100% !important;
   }
   #focusCanvas {
-    max-height: calc(100% - 40px);
+    max-height: none;
+    flex: 1;
+    width: 100% !important;
   }
 
-  /* Fixed bottom container for logs/files tab */
+  /* Inline chart Zoom button */
+  .chart-zoom-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: rgba(26, 21, 38, 0.6);
+    border: 1px solid var(--panel-border);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s ease;
+    z-index: 10;
+  }
+  .chart-zoom-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Full height container for logs/files tab in Right Sidebar */
   .tab-container {
-    flex-shrink: 0;
-    height: 320px;
+    height: 100%;
     display: flex;
     flex-direction: column;
   }
@@ -703,12 +832,86 @@
     scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
   }
 
-  @media (max-width: 1100px) {
-    .workspace {
-      grid-template-columns: 1fr;
+  /* GPU Collapsible & Tabbed Layout */
+  .gpu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease;
+  }
+  .gpu-header:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .gpu-monitor-wrapper {
+    max-height: 500px; /* arbitrary large value */
+    transition: max-height 0.3s cubic-bezier(0, 1, 0, 1); /* smooth collapse animation */
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .gpu-monitor-wrapper.collapsed {
+    max-height: 0 !important;
+  }
+  .gpu-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 4px;
+  }
+  .gpu-tab-btn {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+  }
+  .gpu-tab-btn.active {
+    background: rgba(187, 134, 252, 0.15);
+    color: var(--accent);
+  }
+  .gpu-tab-content {
+    display: none;
+  }
+  .gpu-tab-content.active {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (max-width: 1200px) {
+    .workspace-wrapper {
+      flex-direction: column;
+      height: auto;
+      overflow: visible;
     }
-    .jobs-panel {
-      max-height: 400px;
+    .sidebar-left, .main-content-charts, .sidebar-right {
+      width: 100% !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
+    .tab-container {
+      height: 450px !important; /* Fixed fallback height on mobile/stacked view */
+    }
+    .terminal-body, .file-table-scroll-container {
+      max-height: 380px;
     }
   }
 </style>
@@ -718,109 +921,135 @@
 <header class="panel">
   <h1><span class="pulse"></span> remote-gpu dashboard</h1>
   
-  <div class="auth-box">
-    <input id="token" type="password" placeholder="Enter Bearer Token..." size="30">
+  <div class="auth-box" id="authBox">
+    <div class="key-badge" onclick="expandAuthBox()" title="Click to change auth key">🔑 Key Saved</div>
+    <input id="token" type="password" placeholder="Enter Bearer Token..." size="30" style="transition: all 0.3s ease;">
     <button onclick="saveToken()">Save Key</button>
   </div>
 </header>
 
-<div class="workspace">
-  <!-- Jobs list panel -->
-  <section class="panel jobs-panel">
-    <div class="gpu-monitor" id="gpuMonitor">
-      <div class="gpu-stat-pill">
-        <span class="gpu-stat-label">GPU Name</span>
-        <span class="gpu-stat-val" id="gpuName">Querying...</span>
-      </div>
-      <div class="gpu-stat-pill">
-        <span class="gpu-stat-label">Utilization</span>
-        <span class="gpu-stat-val">
-          <span id="gpuUtil">0%</span>
-          <div class="progress-bar-container">
-            <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
-          </div>
+<div class="workspace-wrapper">
+  <!-- 1. Sütun (GPU + Jobs Queue) -->
+  <aside class="sidebar-left">
+    <section class="panel jobs-panel">
+      <!-- Collapsible GPU Monitor Header -->
+      <div class="gpu-header" onclick="toggleGpuCollapse()">
+        <span class="panel-subtitle" style="font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+          📊 GPU Status
         </span>
+        <span id="gpuCollapseIcon" style="font-size: 12px; color: var(--text-secondary);">▼</span>
       </div>
-      <div class="gpu-stat-pill">
-        <span class="gpu-stat-label">VRAM Usage</span>
-        <span class="gpu-stat-val">
-          <span id="gpuVram">0 / 0 MB</span>
-          <div class="progress-bar-container">
-            <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
+
+      <!-- GPU Monitor Wrapper for collapsing -->
+      <div id="gpuMonitorWrapper" class="gpu-monitor-wrapper">
+        <!-- Compact GPU Tabs -->
+        <div class="gpu-tabs">
+          <button class="gpu-tab-btn active" id="gpuTabStats" onclick="switchGpuTab('stats', event)">Live Stats</button>
+          <button class="gpu-tab-btn" id="gpuTabSpecs" onclick="switchGpuTab('specs', event)">Specs</button>
+        </div>
+
+        <div class="gpu-monitor" id="gpuMonitor">
+          <!-- Tab content: Live Stats -->
+          <div id="gpuContentStats" class="gpu-tab-content active">
+            <div class="gpu-stat-pill">
+              <span class="gpu-stat-label">Utilization</span>
+              <span class="gpu-stat-val">
+                <span id="gpuUtil">0%</span>
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
+                </div>
+              </span>
+            </div>
+            <div class="gpu-stat-pill">
+              <span class="gpu-stat-label">VRAM Usage</span>
+              <span class="gpu-stat-val">
+                <span id="gpuVram">0 / 0 MB</span>
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
+                </div>
+              </span>
+            </div>
+            <div class="gpu-stat-pill">
+              <span class="gpu-stat-label">Hardware Health</span>
+              <div class="gpu-stats-row">
+                <span class="gpu-sub-pill" id="gpuTemp" title="Temperature">🔥 --°C</span>
+                <span class="gpu-sub-pill" id="gpuFan" title="Fan Speed">🌀 --%</span>
+                <span class="gpu-sub-pill" id="gpuPower" title="Power Draw / Limit">⚡ -- / -- W</span>
+              </div>
+            </div>
           </div>
-        </span>
-      </div>
-      <div class="gpu-stat-pill">
-        <span class="gpu-stat-label">Hardware Health</span>
-        <div class="gpu-stats-row">
-          <span class="gpu-sub-pill" id="gpuTemp" title="Temperature">🔥 --°C</span>
-          <span class="gpu-sub-pill" id="gpuFan" title="Fan Speed">🌀 --%</span>
-          <span class="gpu-sub-pill" id="gpuPower" title="Power Draw / Limit">⚡ -- / -- W</span>
+
+          <!-- Tab content: GPU Specs -->
+          <div id="gpuContentSpecs" class="gpu-tab-content">
+            <div class="gpu-stat-pill">
+              <span class="gpu-stat-label">GPU Model</span>
+              <span class="gpu-stat-val" id="gpuName" style="font-size: 11px;">Querying...</span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <h2>Jobs queue</h2>
-    <div class="jobs-table-container">
-      <table id="jobs">
-        <thead>
-          <tr>
-            <th>Label / Task</th>
-            <th>ID</th>
-            <th>Status</th>
-            <th>Started</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="4" style="text-align: center; color: var(--text-secondary);">No jobs found.</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+      <div style="border-top: 1px solid var(--panel-border); margin: 4px 0;"></div>
 
-  <!-- Details panel -->
-  <section class="panel detail-panel">
-    <div class="details-header">
-      <div class="details-title-container">
-        <h2 id="jobTitle">Select a job</h2>
-        <span class="details-subtitle" id="jobSub">Details & metrics will appear here</span>
+      <h2>Jobs queue</h2>
+      <div class="jobs-table-container">
+        <table id="jobs">
+          <thead>
+            <tr>
+              <th>Label / Task</th>
+              <th>Status</th>
+              <th>Started</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="3" style="text-align: center; color: var(--text-secondary);">No jobs found.</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="terminal-controls">
-        <button id="viewModeBtn" class="terminal-btn" style="display: none;" onclick="toggleViewMode()">TV Mode</button>
+    </section>
+  </aside>
+
+  <!-- Sağ Çalışma Alanı (Başlık Üstte, Grafik ve Loglar Altta Yan Yana) -->
+  <div class="control-workspace" style="flex: 1; height: 100%; display: flex; flex-direction: column; overflow: hidden; min-width: 0;">
+    <!-- Geniş Job Başlık Barı (Sağdaki 2 sütunun tamamını kaplar) -->
+    <div id="detailsHeader" class="details-header" style="display: none; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 20px; background: #130f1e; border: 1px solid var(--panel-border); border-radius: 12px; margin-bottom: 16px;">
+      <div class="details-title-container" style="min-width: 0; flex: 1;">
+        <h2 id="jobTitle" style="word-break: break-word; font-size: 16px; line-height: 1.3; margin: 0 0 4px 0; color: #fff;">Select a job</h2>
+        <span class="details-subtitle" id="jobSub" style="display: block; font-size: 11px; color: var(--text-secondary);">Details & metrics will appear here</span>
+      </div>
+      <div class="terminal-controls" style="flex-shrink: 0;">
         <button id="cancelJobBtn" class="terminal-btn" style="display: none; border-color: var(--status-failed); color: var(--status-failed);" onclick="cancelSelectedJob()">Cancel Job</button>
       </div>
     </div>
 
-    <!-- Multi-metric grid layout -->
-    <div id="metricsGrid" class="hidden"></div>
+    <!-- Empty/No-Job placeholder -->
+    <div id="chartsPlaceholder" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--text-secondary); padding: 24px; gap: 12px; background: #130f1e; border: 1px solid var(--panel-border); border-radius: 12px;">
+      <span style="font-size: 24px; opacity: 0.5;">📊</span>
+      <span style="font-size: 11px; max-width: 220px; line-height: 1.4;">Select a job from the queue to view training metrics and real-time logs.</span>
+    </div>
 
-    <!-- Focus/TV view layout -->
-    <div id="focusView">
-      <div class="focus-layout">
-        <div class="focus-main-panel">
-          <div class="chart-header">
-            <h3 style="font-size: 15px;"><span id="focusSwatch">&#9632;</span> <span id="focusKey">Metric</span></h3>
-            <span id="focusCurrent" class="metric-current" style="font-size: 18px; font-weight: 600;">0.00</span>
+    <!-- Sütunlar Panel Grubu (Başlık Seçildiğinde Aktifleşir) -->
+    <div id="chartsScrollArea" style="display: none; flex: 1; gap: 20px; min-height: 0; overflow: hidden; width: 100%;">
+      <!-- 2. Sütun (Sadece Grafik Dikey Akışı) -->
+      <main class="panel main-content-charts" style="width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; height: 100%; padding: 0; background: transparent; border: none; box-shadow: none;">
+        <!-- Loss Card Section -->
+        <div class="chart-section" id="defaultChartContainer" style="background: #130f1e; border: 1px solid var(--panel-border); border-radius: 12px; padding: 16px;">
+          <!-- Inline Zoom Button -->
+          <button class="chart-zoom-btn" onclick="zoomLossChart()" title="Zoom Chart">🔍</button>
+          <div class="chart-header" style="flex-shrink: 0; padding-right: 32px; margin-bottom: 12px;">
+            <span class="chart-title" id="chartCaption" style="font-size: 11px; font-weight: 600;">best-effort loss</span>
+            <span class="chart-title" id="legend" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;"></span>
           </div>
-          <canvas id="focusCanvas"></canvas>
-          <div class="chart-tooltip" id="focusTooltip"></div>
-          <div class="full-range-note" id="focusFullRange" style="font-size: 10px; color: var(--text-secondary); margin-top: 6px;"></div>
+          <canvas id="chart" style="flex: 1; min-height: 0;"></canvas>
+          <div class="chart-tooltip" id="defaultTooltip"></div>
         </div>
-        <div class="focus-sidebar" id="focusThumbs"></div>
-      </div>
-    </div>
 
-    <!-- Default best-effort loss chart -->
-    <div class="chart-section" id="defaultChartContainer">
-      <div class="chart-header">
-        <span class="chart-title" id="chartCaption">Loss curve (best-effort log parser)</span>
-        <span class="chart-title" id="legend" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;"></span>
-      </div>
-      <canvas id="chart"></canvas>
-      <div class="chart-tooltip" id="defaultTooltip"></div>
-    </div>
+        <!-- Other Programmatic Metrics Section (Metrics Grid) -->
+        <div id="metricsGrid" style="display: flex; flex-direction: column; gap: 16px; width: 100%;"></div>
+      </main>
 
-    <!-- Tab container for Logs & Files -->
+  <!-- 3. Sütun (Logs & Files Tab) -->
+  <aside class="sidebar-right">
     <div class="tab-container">
       <div class="tab-header">
         <div class="tab-buttons">
@@ -843,7 +1072,7 @@
 
       <!-- Tab Content: Logs -->
       <div id="tabContentLogs" class="tab-content active">
-        <div class="terminal-body" id="log" style="height: 300px; display: flex; flex-direction: column;">
+        <div class="terminal-body" id="log" style="display: flex; flex-direction: column;">
           <!-- Load older logs indicator -->
           <button id="loadMoreLogsBtn" class="terminal-btn" style="display: none; margin: 0 auto 12px auto; background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); color: var(--text-secondary); width: 100%; max-width: 250px; text-align: center;" onclick="loadMoreLogs()">
             ⬆️ Load older logs...
@@ -876,7 +1105,8 @@
         </div>
       </div>
     </div>
-  </section>
+  </aside>
+  </div>
 </div>
 
 <!-- Lightbox / Preview Modal Overlay -->
@@ -888,6 +1118,33 @@
     </div>
     <div class="modal-body" id="modalBody">
       <!-- Dynamic Preview Content -->
+    </div>
+  </div>
+</div>
+
+<!-- TV Mode Chart Zoom Modal Overlay -->
+<div class="modal-overlay" id="tvModal" onclick="closeTvModal()">
+  <div class="tv-modal-box" onclick="event.stopPropagation()">
+    <div class="modal-title-bar" style="border-bottom: none; padding-bottom: 0;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <h2 style="font-size: 16px; margin: 0; color: #fff;">📊 Metric TV Mode</h2>
+        <span class="details-subtitle" id="tvModalJobSub" style="margin: 0;">Job details</span>
+      </div>
+      <button class="terminal-btn" style="border-color: rgba(255,255,255,0.1); color: var(--text-secondary);" onclick="closeTvModal()">✕ Close</button>
+    </div>
+
+    <!-- Popup Focus view layout -->
+    <div class="focus-layout" id="focusView" style="flex: 1; min-height: 0;">
+      <div class="focus-main-panel" style="flex: 1; min-height: 0;">
+        <div class="chart-header" style="flex-shrink: 0;">
+          <h3 style="font-size: 15px;"><span id="focusSwatch">&#9632;</span> <span id="focusKey">Metric</span></h3>
+          <span id="focusCurrent" class="metric-current" style="font-size: 18px; font-weight: 600;">0.00</span>
+        </div>
+        <canvas id="focusCanvas" style="flex: 1; min-height: 0;"></canvas>
+        <div class="chart-tooltip" id="focusTooltip"></div>
+        <div class="full-range-note" id="focusFullRange" style="font-size: 10px; color: var(--text-secondary); margin-top: 6px; flex-shrink: 0;"></div>
+      </div>
+      <div class="focus-thumbnails-strip" id="focusThumbs"></div>
     </div>
   </div>
 </div>
@@ -904,16 +1161,32 @@ const SERIES_COLORS = ["#03dac6", "#bb86fc", "#facc15", "#cf6679", "#3700b3", "#
 
 // Subtab & Log page state
 let activeSubTab = "logs";
+let activeChartTab = "loss";
 let currentLogCursor = null;
 let hasMoreLogs = false;
 const LOG_PAGE_LIMIT = 200;
 
 function getToken() { return localStorage.getItem("gpu_token") || ""; }
+function expandAuthBox() {
+  const box = document.getElementById("authBox");
+  box.classList.remove("collapsed");
+  document.getElementById("token").focus();
+}
+function collapseAuthBox() {
+  const box = document.getElementById("authBox");
+  if (getToken()) {
+    box.classList.add("collapsed");
+  } else {
+    box.classList.remove("collapsed");
+  }
+}
 function saveToken() {
   localStorage.setItem("gpu_token", document.getElementById("token").value);
+  collapseAuthBox();
   tick();
 }
 document.getElementById("token").value = getToken();
+collapseAuthBox(); // Collapsed by default on startup if key exists
 
 async function api(path, options = {}) {
   const headers = { Authorization: "Bearer " + getToken(), ...options.headers };
@@ -975,7 +1248,7 @@ async function refreshJobs() {
   body.innerHTML = "";
   
   if (jobs.length === 0) {
-    body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-secondary);">No jobs found.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-secondary);">No jobs found.</td></tr>`;
     return;
   }
 
@@ -985,11 +1258,11 @@ async function refreshJobs() {
     if (j.id === selectedJobId) tr.className = "selected";
     
     const labelText = j.label ? esc(j.label) : `<span style="font-style: italic; color: var(--text-secondary);">${esc(j.task)}</span>`;
+    tr.title = `Job ID: ${j.id}`;
     tr.innerHTML = `
-      <td style="font-weight: 500;">${labelText}</td>
-      <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-secondary); font-size:12px;" title="${esc(j.id)}">${j.id.slice(0, 8)}</td>
-      <td><span class="status-pill status-${j.status}">${j.status}</span></td>
-      <td style="color: var(--text-secondary);">${fmtTime(j.started_at)}</td>
+      <td style="max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;" title="${j.label || j.task}">${labelText}</td>
+      <td style="white-space: nowrap;"><span class="status-pill status-${j.status}">${j.status}</span></td>
+      <td style="color: var(--text-secondary); white-space: nowrap;">${fmtTime(j.started_at)}</td>
     `;
     tr.onclick = () => {
       // Instantly highlight clicked row — don't wait for network or tick
@@ -999,7 +1272,7 @@ async function refreshJobs() {
       const isNew = j.id !== selectedJobId;
       if (isNew) {
         selectedJobId = j.id;
-        setViewMode("grid");
+        viewMode = "grid";
         document.getElementById("logSearch").value = "";
         // Clear per-job color cache so colors don't bleed across jobs
         Object.keys(keyColors).forEach(k => delete keyColors[k]);
@@ -1014,6 +1287,33 @@ async function refreshJobs() {
       refreshDetail();
     };
     body.appendChild(tr);
+  }
+
+  // Auto-select logic on startup (if no job is currently selected)
+  if (!selectedJobId && jobs.length > 0) {
+    const sortedJobs = jobs.slice().reverse(); // newest first
+    
+    // 1st Priority: Look for any currently running job
+    let autoJob = sortedJobs.find(j => j.status === "running");
+    
+    // 2nd Priority: Look for the most recent inactive job (completed, failed, cancelled)
+    if (!autoJob) {
+      autoJob = sortedJobs.find(j => j.status !== "queued" && j.status !== "running");
+    }
+    
+    if (autoJob) {
+      const targetIndex = sortedJobs.indexOf(autoJob);
+      const rows = body.querySelectorAll("tr");
+      if (rows[targetIndex]) {
+        rows[targetIndex].click();
+      }
+    } else {
+      // Fallback: If only queued jobs exist, select the most recent one anyway
+      const rows = body.querySelectorAll("tr");
+      if (rows[0]) {
+        rows[0].click();
+      }
+    }
   }
 }
 
@@ -1248,7 +1548,6 @@ function drawMetricsChart(records) {
   grid.innerHTML = "";
   if (records.length < 2) {
     grid.innerHTML = '<span style="color: var(--text-secondary); font-size: 13px;">Insufficient metrics data available yet.</span>';
-    document.getElementById("viewModeBtn").style.display = "none";
     return;
   }
   const keys = [...new Set(records.flatMap((r) => Object.keys(r)))].filter((k) => k !== "step");
@@ -1259,7 +1558,6 @@ function drawMetricsChart(records) {
     const series = records.map((r, idx) => [xs[idx], r[key]]).filter((p) => typeof p[1] === "number");
     return series.length >= 2;
   });
-  document.getElementById("viewModeBtn").style.display = metricsState.keys.length ? "inline-block" : "none";
 
   for (const key of metricsState.keys) {
     const series = records.map((r, idx) => [xs[idx], r[key]]).filter((p) => typeof p[1] === "number");
@@ -1274,15 +1572,16 @@ function buildMetricCard(key, series) {
 
   const card = document.createElement("div");
   card.className = "metric-card";
+  card.style.position = "relative";
   card.innerHTML = `
-    <div class="metric-title">
+    <button class="chart-zoom-btn" onclick="zoomMetric('${key}', event)" title="Zoom Chart">🔍</button>
+    <div class="metric-title" style="padding-right: 32px;">
       <span style="color: ${color}; font-weight: 600;">&#9632; ${esc(key)}</span>
       <span class="metric-current" style="color: var(--text-primary); font-family: 'JetBrains Mono', monospace;">${fmtNum(current)}</span>
     </div>
     <canvas></canvas>
     <div class="chart-tooltip"></div>
   `;
-  card.onclick = () => { metricsState.focusIdx = metricsState.keys.indexOf(key); setViewMode("focus"); };
 
   const canvas = card.querySelector("canvas");
   // requestAnimationFrame ensures layout is complete before drawing (avoids flat-line bug)
@@ -1296,21 +1595,6 @@ function buildMetricCard(key, series) {
 const metricsState = { records: [], keys: [], xMin: 0, xMax: 0, focusIdx: 0 };
 let viewMode = "grid";
 
-function setViewMode(mode) {
-  viewMode = mode;
-  const grid = document.getElementById("metricsGrid");
-  const focus = document.getElementById("focusView");
-  const showGrid = mode === "grid";
-  const showFocus = mode === "focus";
-  grid.classList.toggle("hidden", !showGrid);
-  grid.style.display = showGrid ? "grid" : "none";
-  focus.classList.toggle("hidden", !showFocus);
-  focus.style.display = showFocus ? "block" : "none";
-  document.getElementById("viewModeBtn").textContent = showGrid ? "TV Mode" : "Grid view";
-  if (showFocus) renderFocusView();
-}
-function toggleViewMode() { setViewMode(viewMode === "grid" ? "focus" : "grid"); }
-
 function seriesFor(key) {
   return metricsState.records
     .map((r, idx) => [r.step !== undefined ? r.step : idx, r[key]])
@@ -1318,13 +1602,26 @@ function seriesFor(key) {
 }
 
 function renderFocusView() {
-  const { keys, xMin, xMax } = metricsState;
-  if (!keys.length) return;
-  metricsState.focusIdx = ((metricsState.focusIdx % keys.length) + keys.length) % keys.length;
-  const key = keys[metricsState.focusIdx];
-  const color = colorForKey(key);
-  const series = seriesFor(key);
+  const thumbs = document.getElementById("focusThumbs");
+  thumbs.style.display = "flex"; // Restore thumbnail strip for navigation inside TV mode
 
+  let series = [];
+  let key = "";
+  let color = "";
+
+  if (zoomedMetricKey === "loss") {
+    series = parseLossPoints(rawLogContent.join("\n"));
+    key = "loss";
+    color = "#03dac6"; // Teal accent
+  } else {
+    series = seriesFor(zoomedMetricKey);
+    key = zoomedMetricKey;
+    color = colorForKey(key);
+  }
+
+  if (!series || !series.length) return;
+
+  document.getElementById("tvModal").querySelector("h2").textContent = `📊 Zoom: ${key}`;
   document.getElementById("focusKey").textContent = key;
   document.getElementById("focusSwatch").style.color = color;
   document.getElementById("focusCurrent").style.color = color;
@@ -1332,6 +1629,12 @@ function renderFocusView() {
 
   const canvas = document.getElementById("focusCanvas");
   const tooltip = document.getElementById("focusTooltip");
+  
+  // Calculate actual x bounds from the series itself to cover ALL steps
+  const xs = series.map(p => p[0]);
+  const xMin = Math.min(...xs);
+  const xMax = Math.max(...xs);
+
   const { sx, lo, hi, trueMin, trueMax } = renderSeriesIntoCanvas(canvas, series, xMin, xMax, color, tooltip);
 
   const note = document.getElementById("focusFullRange");
@@ -1339,25 +1642,42 @@ function renderFocusView() {
     ? `full range: ${fmtNum(trueMin)} – ${fmtNum(trueMax)} (axis zoomed for readability)`
     : "";
 
-  const thumbs = document.getElementById("focusThumbs");
+  // Render thumbnail strip for ALL available metrics (including Loss)
   thumbs.innerHTML = "";
-  keys.forEach((k, i) => {
-    const tColor = colorForKey(k);
-    const tSeries = seriesFor(k);
+  
+  let allKeys = [];
+  const job = jobsById[selectedJobId];
+  const usesMetrics = job && (job.capabilities || []).includes("metrics");
+
+  if (usesMetrics) {
+    allKeys = metricsState.keys || [];
+  } else {
+    allKeys = ["loss"];
+  }
+
+  allKeys.forEach((k) => {
+    const tColor = k === "loss" ? "#03dac6" : colorForKey(k);
+    const tSeries = k === "loss" ? parseLossPoints(rawLogContent.join("\n")) : seriesFor(k);
+    if (!tSeries || !tSeries.length) return;
+
     const thumb = document.createElement("div");
-    thumb.className = "focus-thumb" + (i === metricsState.focusIdx ? " active" : "");
+    thumb.className = "focus-thumb" + (k === zoomedMetricKey ? " active" : "");
     thumb.innerHTML = `
       <div class="metric-title" style="font-size: 10px; color: var(--text-secondary); font-weight: 500;">
         <span style="color: ${tColor};">&#9632;</span> ${esc(k)}
       </div>
-      <canvas data-w="150" data-h="44" width="150" height="44"></canvas>
+      <canvas data-w="140" data-h="32" width="140" height="32"></canvas>
     `;
-    thumb.onclick = () => { metricsState.focusIdx = i; renderFocusView(); };
+    thumb.onclick = () => { zoomedMetricKey = k; renderFocusView(); };
     thumbs.appendChild(thumb);
+    
     const tCanvas = thumb.querySelector("canvas");
-    // Use requestAnimationFrame to ensure the thumb is painted before drawing
     requestAnimationFrame(() => {
-      renderSeriesIntoCanvas(tCanvas, tSeries, xMin, xMax, tColor);
+      // Draw simplified thumbnail chart without tooltip using dynamic bounds
+      const txs = tSeries.map(p => p[0]);
+      const txMin = Math.min(...txs);
+      const txMax = Math.max(...txs);
+      renderSeriesIntoCanvas(tCanvas, tSeries, txMin, txMax, tColor);
     });
   });
 }
@@ -1635,6 +1955,11 @@ async function refreshDetail(fromTick = false) {
   const signal = detailAbortController.signal;
   detailFetchInProgress = true;
 
+  // Show details panel and hide empty placeholder
+  document.getElementById("chartsPlaceholder").style.display = "none";
+  document.getElementById("detailsHeader").style.display = "flex";
+  document.getElementById("chartsScrollArea").style.display = "flex";
+
   const job = jobsById[jobId];
   document.getElementById("jobTitle").textContent = job && job.label ? job.label : "Job ID: " + jobId.slice(0, 8);
   document.getElementById("jobSub").textContent = `Task: ${job ? job.task : "-"} | Created: ${job ? new Date(job.created_at * 1000).toLocaleString() : "-"}`;
@@ -1649,27 +1974,11 @@ async function refreshDetail(fromTick = false) {
 
   const usesMetrics = job && (job.capabilities || []).includes("metrics");
 
+  // Show/hide other metrics section based on capabilities
   const grid = document.getElementById("metricsGrid");
-  const showGrid = usesMetrics && viewMode === "grid";
-  grid.classList.toggle("hidden", !showGrid);
-  grid.style.display = showGrid ? "grid" : "none";
+  grid.style.display = usesMetrics ? "flex" : "none";
 
-  const focusView = document.getElementById("focusView");
-  const showFocus = usesMetrics && viewMode === "focus";
-  focusView.classList.toggle("hidden", !showFocus);
-  focusView.style.display = showFocus ? "block" : "none";
-
-  const defaultChart = document.getElementById("defaultChartContainer");
-  defaultChart.classList.toggle("hidden", usesMetrics);
-  defaultChart.style.display = usesMetrics ? "none" : "block";
-  
-  if (!usesMetrics) document.getElementById("viewModeBtn").style.display = "none";
-
-  if (usesMetrics) {
-    document.getElementById("chartCaption").textContent = "structured metrics (job-declared) — hover a chart for exact values";
-  } else {
-    document.getElementById("chartCaption").textContent = 'loss (best-effort, parsed from log lines containing "loss")';
-  }
+  document.getElementById("chartCaption").textContent = "best-effort loss";
 
   // If this is a new job selection (not a tick refresh), reset log pagination cursors
   if (!fromTick) {
@@ -1703,9 +2012,13 @@ async function refreshDetail(fromTick = false) {
     const loadBtn = document.getElementById("loadMoreLogsBtn");
     loadBtn.style.display = hasMoreLogs ? "block" : "none";
 
+    // Toggle best-effort log loss visibility based on metrics capabilities
+    const defaultChart = document.getElementById("defaultChartContainer");
     if (usesMetrics) {
+      defaultChart.style.display = "none";
       drawMetricsChart(metricsResult || []);
     } else {
+      defaultChart.style.display = "block";
       drawLossChart(parseLossPoints(rawLogContent.join("\n")));
     }
     
@@ -1730,6 +2043,84 @@ async function tick() {
 
 tick();
 setInterval(tick, 3000);
+
+// GPU Collapse and Tabs Controllers
+function toggleGpuCollapse() {
+  const wrapper = document.getElementById("gpuMonitorWrapper");
+  const icon = document.getElementById("gpuCollapseIcon");
+  const isCollapsed = wrapper.classList.toggle("collapsed");
+  icon.textContent = isCollapsed ? "▲" : "▼";
+}
+
+function switchGpuTab(tab, event) {
+  // Prevent click event bubbling up to the gpu-header (which would trigger collapse)
+  if (event) event.stopPropagation();
+
+  // Update tab buttons active state
+  document.querySelectorAll(".gpu-tab-btn").forEach(btn => btn.classList.remove("active"));
+  document.getElementById(`gpuTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add("active");
+
+  // Update active tab contents
+  document.querySelectorAll(".gpu-tab-content").forEach(content => content.classList.remove("active"));
+  document.getElementById(`gpuContent${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add("active");
+}
+
+// TV Mode Zoom Modal Controllers
+let zoomedMetricKey = "loss"; // Tracks which metric is zoomed: "loss" or custom key (e.g. "lr")
+
+function zoomLossChart() {
+  zoomedMetricKey = "loss";
+  openZoomModal("Loss (best-effort)");
+}
+
+function zoomMetric(key, event) {
+  if (event) event.stopPropagation(); // prevent card container clicks if any
+  zoomedMetricKey = key;
+  openZoomModal(key);
+}
+
+function openZoomModal(title) {
+  const modal = document.getElementById("tvModal");
+  modal.classList.add("active");
+  viewMode = "focus";
+
+  // Set title & subtitle in modal
+  modal.querySelector("h2").textContent = `📊 Zoom: ${title}`;
+  const job = jobsById[selectedJobId];
+  if (job) {
+    document.getElementById("tvModalJobSub").textContent = `Job: ${job.label || selectedJobId.slice(0,8)} | Task: ${job.task}`;
+  }
+
+  // Make focus container visible
+  const focusView = document.getElementById("focusView");
+  focusView.style.display = "flex";
+
+  // Force draw canvas with correct sizes
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById("focusCanvas");
+      if (canvas) {
+        canvas.width = canvas.clientWidth || 800;
+        canvas.height = canvas.clientHeight || 400;
+      }
+      renderFocusView();
+    });
+  });
+}
+
+function closeTvModal() {
+  const modal = document.getElementById("tvModal");
+  modal.classList.remove("active");
+  viewMode = "grid";
+
+  const focusView = document.getElementById("focusView");
+  focusView.style.display = "none";
+
+  // Redraw main dashboard charts to preserve sizes
+  if (selectedJobId) {
+    refreshDetail();
+  }
+}
 
 // Auto-refit charts on window resize
 window.onresize = () => {

@@ -94,18 +94,34 @@ class JobQueue:
         self._pending: "queue.Queue[str]" = queue.Queue()
         self._order: list[str] = []
         self._global_lock = threading.Lock()
-        self._load_history()
+        self._history_loaded = False
+        
+        # Start history loading in a background thread to prevent startup block
+        history_loader = threading.Thread(target=self._load_history_async, daemon=True)
+        history_loader.start()
+        
         worker = threading.Thread(target=self._worker_loop, daemon=True)
         worker.start()
 
-    def _load_history(self) -> None:
-        # All history records are terminal jobs (only saved on completion),
-        # so these are safe to restore as-is for listing.
-        records = sorted(_history.load().values(), key=lambda r: r["created_at"])
-        for record in records:
-            job = Job.from_record(record)
-            self._jobs[job.id] = job
-            self._order.append(job.id)
+    def _load_history_async(self) -> None:
+        try:
+            # Execute the heavy disk read outside of the global lock
+            # so the main thread and queue submission are never blocked
+            history_data = _history.load()
+            records = sorted(history_data.values(), key=lambda r: r["created_at"])
+            
+            for record in records:
+                job = Job.from_record(record)
+                with self._global_lock:
+                    self._jobs[job.id] = job
+                    # Prevent duplicates in case jobs are added before history loading finishes
+                    if job.id not in self._order:
+                        self._order.append(job.id)
+        except Exception as e:
+            # Prevent crashes if history loading fails
+            print(f"Error loading job history: {e}")
+        finally:
+            self._history_loaded = True
 
     def submit(
         self,
