@@ -158,27 +158,27 @@
   .gpu-stat-pill {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--panel-border);
-    border-radius: 12px;
-    padding: 10px 14px;
-    font-size: 12px;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 11px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 3px;
   }
-  .gpu-stat-label { color: var(--text-secondary); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .gpu-stat-label { color: var(--text-secondary); font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; }
   .gpu-stat-val { font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   
   .progress-bar-container {
-    width: 80px;
-    height: 6px;
+    width: 60px;
+    height: 3px;
     background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    border-radius: 1.5px;
     overflow: hidden;
   }
   .progress-bar-fill {
     height: 100%;
     background: var(--status-running);
-    border-radius: 3px;
+    border-radius: 1.5px;
     transition: width 0.5s ease;
   }
 
@@ -951,69 +951,70 @@
         <div class="gpu-monitor" id="gpuMonitor">
           <!-- Tab content: Live Stats -->
           <div id="gpuContentStats" class="gpu-tab-content active">
-            <!-- GPU Stats -->
-            <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">GPU Util</span>
-              <span class="gpu-stat-val">
-                <span id="gpuUtil">0%</span>
-                <div class="progress-bar-container">
-                  <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
-                </div>
-              </span>
-            </div>
-            <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">VRAM Usage</span>
-              <span class="gpu-stat-val">
-                <span id="gpuVram">0 / 0 MB</span>
-                <div class="progress-bar-container">
-                  <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
-                </div>
-              </span>
-            </div>
-            
-            <!-- CPU & RAM Stats -->
-            <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">CPU Util</span>
-              <span class="gpu-stat-val">
-                <span id="sysCpu">0%</span>
-                <div class="progress-bar-container">
-                  <div class="progress-bar-fill" id="sysCpuBar" style="width: 0%"></div>
-                </div>
-              </span>
-            </div>
-            <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">System RAM</span>
-              <span class="gpu-stat-val">
-                <span id="sysRam">0.0 / 0.0 GB</span>
-                <div class="progress-bar-container">
-                  <div class="progress-bar-fill" id="sysRamBar" style="width: 0%"></div>
-                </div>
-              </span>
+            <!-- Row 1: GPU & CPU Util -->
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <div class="gpu-stat-pill" style="flex: 1; min-width: 0;">
+                <span class="gpu-stat-label">GPU Util</span>
+                <span class="gpu-stat-val" style="font-size: 11px;">
+                  <span id="gpuUtil">0%</span>
+                  <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="gpuUtilBar" style="width: 0%"></div>
+                  </div>
+                </span>
+              </div>
+              <div class="gpu-stat-pill" style="flex: 1; min-width: 0;">
+                <span class="gpu-stat-label">CPU Util</span>
+                <span class="gpu-stat-val" style="font-size: 11px;">
+                  <span id="sysCpu">0%</span>
+                  <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="sysCpuBar" style="width: 0%"></div>
+                  </div>
+                </span>
+              </div>
             </div>
 
-            <!-- Network & Disk Stats -->
-            <div class="gpu-stat-pill">
-              <span class="gpu-stat-label">Network Traffic</span>
-              <div class="gpu-stats-row" style="margin-top: 2px;">
-                <span class="gpu-sub-pill" id="sysNetDown" title="Download Speed">↓ 0 KB/s</span>
-                <span class="gpu-sub-pill" id="sysNetUp" title="Upload Speed">↑ 0 KB/s</span>
+            <!-- Row 2: VRAM & System RAM -->
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <div class="gpu-stat-pill" style="flex: 1; min-width: 0;">
+                <span class="gpu-stat-label">VRAM</span>
+                <span class="gpu-stat-val" style="font-size: 10px; font-weight: 500;">
+                  <span id="gpuVram" style="white-space: nowrap;">0 / 0 MB</span>
+                </span>
+                <div class="progress-bar-container" style="width: 100%; margin-top: 2px;">
+                  <div class="progress-bar-fill" id="gpuVramBar" style="width: 0%"></div>
+                </div>
+              </div>
+              <div class="gpu-stat-pill" style="flex: 1; min-width: 0;">
+                <span class="gpu-stat-label">Sys RAM</span>
+                <span class="gpu-stat-val" style="font-size: 10px; font-weight: 500;">
+                  <span id="sysRam" style="white-space: nowrap;">0 / 0 GB</span>
+                </span>
+                <div class="progress-bar-container" style="width: 100%; margin-top: 2px;">
+                  <div class="progress-bar-fill" id="sysRamBar" style="width: 0%"></div>
+                </div>
               </div>
             </div>
-            <div class="gpu-stat-pill" style="border-bottom: none; padding-bottom: 0;">
-              <span class="gpu-stat-label">Disk Activity</span>
-              <div class="gpu-stats-row" style="margin-top: 2px;">
-                <span class="gpu-sub-pill" id="sysDiskRead" title="Read Speed">📖 0 KB/s</span>
-                <span class="gpu-sub-pill" id="sysDiskWrite" title="Write Speed">✍️ 0 KB/s</span>
+
+            <!-- Row 3: System I/O (Network & Disk Combined) -->
+            <div class="gpu-stat-pill" style="width: 100%;">
+              <span class="gpu-stat-label">System I/O & Traffic</span>
+              <div class="gpu-stats-row" style="flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+                <span class="gpu-sub-pill" id="sysNetDown" style="font-size: 9px; padding: 2px 4px;">↓ 0 KB/s</span>
+                <span class="gpu-sub-pill" id="sysNetUp" style="font-size: 9px; padding: 2px 4px;">↑ 0 KB/s</span>
+                <span class="gpu-sub-pill" id="sysDiskRead" style="font-size: 9px; padding: 2px 4px;">📖 0 KB/s</span>
+                <span class="gpu-sub-pill" id="sysDiskWrite" style="font-size: 9px; padding: 2px 4px;">✍️ 0 KB/s</span>
               </div>
             </div>
             
-            <!-- GPU Extra Health -->
-            <div class="gpu-stat-pill" style="border-top: 1px solid rgba(255, 255, 255, 0.05); margin-top: 8px; padding-top: 8px;">
-              <span class="gpu-stat-label">GPU Health</span>
-              <div class="gpu-stats-row">
-                <span class="gpu-sub-pill" id="gpuTemp" title="Temperature">🔥 --°C</span>
-                <span class="gpu-sub-pill" id="gpuFan" title="Fan Speed">🌀 --%</span>
-                <span class="gpu-sub-pill" id="gpuPower" title="Power Draw / Limit">⚡ -- / -- W</span>
+            <!-- Row 4: System Health Info (GPU, CPU, Motherboard) -->
+            <div class="gpu-stat-pill" style="width: 100%;">
+              <span class="gpu-stat-label">System Health</span>
+              <div class="gpu-stats-row" style="flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+                <span class="gpu-sub-pill" id="gpuTemp" style="font-size: 9px; padding: 2px 4px;" title="GPU Temp">🔥 --°C</span>
+                <span class="gpu-sub-pill" id="sysCpuTemp" style="font-size: 9px; padding: 2px 4px;" title="CPU Temp">💻 --°C</span>
+                <span class="gpu-sub-pill" id="sysBoardTemp" style="font-size: 9px; padding: 2px 4px;" title="Mainboard Temp">⚙️ --°C</span>
+                <span class="gpu-sub-pill" id="gpuFan" style="font-size: 9px; padding: 2px 4px;" title="GPU Fan">🌀 --%</span>
+                <span class="gpu-sub-pill" id="gpuPower" style="font-size: 9px; padding: 2px 4px;" title="GPU Power">⚡ -- W</span>
               </div>
             </div>
           </div>
@@ -1294,12 +1295,14 @@ async function refreshGpu() {
     document.getElementById("sysDiskRead").textContent = fmtSpeed(gpu.disk_read_kbps, "📖 ");
     document.getElementById("sysDiskWrite").textContent = fmtSpeed(gpu.disk_write_kbps, "✍️ ");
 
-    // GPU Health
+    // System Health
     document.getElementById("gpuTemp").textContent = gpu.temperature_c !== null ? `🔥 ${gpu.temperature_c}°C` : "🔥 --°C";
+    document.getElementById("sysCpuTemp").textContent = gpu.cpu_temperature_c !== null ? `💻 ${gpu.cpu_temperature_c}°C` : "💻 --°C";
+    document.getElementById("sysBoardTemp").textContent = gpu.board_temperature_c !== null ? `⚙️ ${gpu.board_temperature_c}°C` : "⚙️ --°C";
     document.getElementById("gpuFan").textContent = gpu.fan_speed_pct !== null ? `🌀 ${gpu.fan_speed_pct}%` : "🌀 --%";
     const powerDraw = gpu.power_draw_w !== null ? gpu.power_draw_w.toFixed(0) : "--";
     const powerLimit = gpu.power_limit_w !== null ? gpu.power_limit_w.toFixed(0) : "--";
-    document.getElementById("gpuPower").textContent = `⚡ ${powerDraw} / ${powerLimit} W`;
+    document.getElementById("gpuPower").textContent = `⚡ ${powerDraw} W`;
 
     // Specs Tab
     document.getElementById("gpuSpecDriverCuda").textContent = `${gpu.gpu_driver_version} / CUDA ${gpu.gpu_cuda_version}`;
@@ -1323,8 +1326,10 @@ async function refreshGpu() {
     document.getElementById("sysDiskWrite").textContent = "✍️ 0 KB/s";
 
     document.getElementById("gpuTemp").textContent = "🔥 --°C";
+    document.getElementById("sysCpuTemp").textContent = "💻 --°C";
+    document.getElementById("sysBoardTemp").textContent = "⚙️ --°C";
     document.getElementById("gpuFan").textContent = "🌀 --%";
-    document.getElementById("gpuPower").textContent = "⚡ -- / -- W";
+    document.getElementById("gpuPower").textContent = "⚡ -- W";
   }
 }
 

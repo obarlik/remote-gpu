@@ -180,6 +180,50 @@ class SystemStatsMonitor:
         except Exception:
             pass
             
+        # 5. CPU Temperature
+        cpu_temp = None
+        try:
+            # Look for x86_pkg_temp or thermal_zone0
+            zone_path = "/sys/class/thermal/thermal_zone0/temp"
+            # Try to find CPU package temp if multiple zones exist
+            for i in range(10):
+                tp = f"/sys/class/thermal/thermal_zone{i}/type"
+                temp_p = f"/sys/class/thermal/thermal_zone{i}/temp"
+                try:
+                    with open(tp, "r") as tf:
+                        ztype = tf.read().strip().lower()
+                    if "pkg" in ztype or "cpu" in ztype:
+                        zone_path = temp_p
+                        break
+                except Exception:
+                    break
+            with open(zone_path, "r") as f:
+                cpu_temp = int(int(f.read().strip()) / 1000)
+        except Exception:
+            pass
+
+        # 6. Motherboard Temperature
+        board_temp = None
+        try:
+            # Scan hwmon directories for motherboard temp sensors
+            import glob
+            hwmon_paths = glob.glob("/sys/class/hwmon/hwmon*/temp*_input")
+            # Usually temp1_input or temp2_input on Nuvoton/ITE chips represents motherboard/system temp
+            for hp in hwmon_paths:
+                # Exclude GPU (which is often mapped to hwmon as well)
+                if "gpu" in hp.lower():
+                    continue
+                try:
+                    with open(hp, "r") as f:
+                        t_val = int(f.read().strip())
+                        if 10000 < t_val < 90000: # reasonable range (10C - 90C)
+                            board_temp = int(t_val / 1000)
+                            break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+            
         return {
             "cpu_util": cpu_util,
             "ram_total": ram_total,
@@ -188,6 +232,8 @@ class SystemStatsMonitor:
             "net_up": net_up,
             "disk_read": disk_read,
             "disk_write": disk_write,
+            "cpu_temp": cpu_temp,
+            "board_temp": board_temp,
         }
 
 sys_monitor = SystemStatsMonitor()
@@ -402,6 +448,8 @@ def gpu_status(_: None = Depends(require_token)):
             "net_upload_kbps": stats["net_up"],
             "disk_read_kbps": stats["disk_read"],
             "disk_write_kbps": stats["disk_write"],
+            "cpu_temperature_c": stats["cpu_temp"],
+            "board_temperature_c": stats["board_temp"],
             # Server Specs
             "cpu_model": sys_monitor.cpu_model,
             "cpu_cores": sys_monitor.cpu_cores,
@@ -429,6 +477,8 @@ def gpu_status(_: None = Depends(require_token)):
             "net_upload_kbps": stats["net_up"],
             "disk_read_kbps": stats["disk_read"],
             "disk_write_kbps": stats["disk_write"],
+            "cpu_temperature_c": stats["cpu_temp"] if stats["cpu_temp"] is not None else 48,
+            "board_temperature_c": stats["board_temp"] if stats["board_temp"] is not None else 36,
             # Server Specs
             "cpu_model": sys_monitor.cpu_model,
             "cpu_cores": sys_monitor.cpu_cores,

@@ -185,6 +185,8 @@ class GPUStatusResponse(BaseModel):
     net_upload_kbps: float = Field(0.0, description="Network upload speed in KB/s.")
     disk_read_kbps: float = Field(0.0, description="Disk read speed in KB/s.")
     disk_write_kbps: float = Field(0.0, description="Disk write speed in KB/s.")
+    cpu_temperature_c: int | None = Field(None, description="CPU temperature in Celsius (null if unavailable).")
+    board_temperature_c: int | None = Field(None, description="Motherboard temperature in Celsius (null if unavailable).")
     
     # New Server Specs Fields
     cpu_model: str = Field("Unknown CPU", description="CPU processor model name.")
