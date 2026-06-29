@@ -5,6 +5,13 @@ from pydantic import BaseModel, Field
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
 
+class RetentionPolicy(BaseModel):
+    on_success: Literal["keep_all", "delete_artifacts", "delete_all"] = "keep_all"
+    on_failure: Literal["keep_all", "delete_artifacts", "delete_all"] = "keep_all"
+    on_cancelled: Literal["keep_all", "delete_artifacts", "delete_all"] = "keep_all"
+    ttl_hours: int | None = Field(default=None, description="Time to live in hours after job completion/failure/cancellation.")
+
+
 class JobSubmitRequest(BaseModel):
     task: str = Field(
         ...,
@@ -43,6 +50,10 @@ class JobSubmitRequest(BaseModel):
         ),
         examples=[["metrics"]],
     )
+    retention: RetentionPolicy | None = Field(
+        default=None,
+        description="Optional retention policy for the job's files and directory.",
+    )
 
 
 class UploadInitRequest(BaseModel):
@@ -70,6 +81,7 @@ class JobInfo(BaseModel):
     finished_at: float | None = None
     error: str | None = None
     output_dir: str
+    retention: RetentionPolicy | None = None
 
 
 class JobMoveRequest(BaseModel):

@@ -11,9 +11,9 @@ from typing import Any
 
 from gpu_server.config import DATA_DIR, JOBS_DIR, TRAIN_PYTHON_EXE
 from gpu_server.jobs.registry import CUSTOM_SCRIPT_TASK, is_known_task, resolve_task_module
-from gpu_server.store import JsonStore
+from gpu_server.history_store import PartitionedHistoryStore
 
-_history = JsonStore(DATA_DIR / "jobs_history.json")
+_history = PartitionedHistoryStore(DATA_DIR / "history")
 
 
 class Job:
@@ -24,6 +24,7 @@ class Job:
         project: str | None = None,
         capabilities: list[str] | None = None,
         label: str | None = None,
+        retention: dict[str, Any] | None = None,
     ):
         self.id = uuid.uuid4().hex[:12]
         self.task = task
@@ -40,6 +41,7 @@ class Job:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = self.output_dir / "log.txt"
         self.process: subprocess.Popen | None = None
+        self.retention = retention
         self.lock = threading.Lock()
 
     @classmethod
@@ -58,6 +60,7 @@ class Job:
         job.started_at = record.get("started_at")
         job.finished_at = record.get("finished_at")
         job.error = record.get("error")
+        job.retention = record.get("retention")
         saved_path = Path(record["output_dir"])
         if not saved_path.exists():
             resolved = JOBS_DIR / record["id"]
@@ -70,6 +73,12 @@ class Job:
         return job
 
     def to_dict(self) -> dict[str, Any]:
+        ret_val = self.retention
+        if ret_val is not None:
+            if hasattr(ret_val, "dict"):
+                ret_val = ret_val.dict()
+            elif hasattr(ret_val, "model_dump"):
+                ret_val = ret_val.model_dump()
         return {
             "id": self.id,
             "task": self.task,
@@ -83,6 +92,7 @@ class Job:
             "finished_at": self.finished_at,
             "error": self.error,
             "output_dir": str(self.output_dir),
+            "retention": ret_val,
         }
 
 
@@ -102,6 +112,9 @@ class JobQueue:
         
         worker = threading.Thread(target=self._worker_loop, daemon=True)
         worker.start()
+        
+        cleaner = threading.Thread(target=self._retention_cleaner_loop, daemon=True)
+        cleaner.start()
 
     def _load_history_async(self) -> None:
         try:
@@ -130,12 +143,13 @@ class JobQueue:
         project: str | None = None,
         capabilities: list[str] | None = None,
         label: str | None = None,
+        retention: dict[str, Any] | None = None,
     ) -> Job:
         if not is_known_task(task):
             raise ValueError(f"Unknown task '{task}'")
         if task == CUSTOM_SCRIPT_TASK and not Path(params.get("script_path", "")).is_file():
             raise ValueError("custom_script task requires an existing 'script_path' param")
-        job = Job(task, params, project, capabilities, label)
+        job = Job(task, params, project, capabilities, label, retention)
         with self._global_lock:
             self._jobs[job.id] = job
             self._order.append(job.id)
@@ -209,6 +223,7 @@ class JobQueue:
                 with job.lock:
                     job.finished_at = time.time()
                 _history.save_one(job.id, job.to_dict())
+                self._apply_immediate_cleanup(job)
                 continue
             try:
                 self._run_job(job)
@@ -218,6 +233,7 @@ class JobQueue:
                     job.error = f"server-side error launching job: {exc}"
                     job.finished_at = time.time()
                 _history.save_one(job.id, job.to_dict())
+                self._apply_immediate_cleanup(job)
 
     @staticmethod
     def _build_command(job: "Job", params_path: Path) -> list[str]:
@@ -280,6 +296,89 @@ class JobQueue:
                 job.status = "failed"
                 job.error = f"process exited with code {return_code}"
         _history.save_one(job.id, job.to_dict())
+        self._apply_immediate_cleanup(job)
+
+    def _apply_immediate_cleanup(self, job: Job) -> None:
+        if not job.retention:
+            return
+        
+        status = job.status  # "completed", "failed", "cancelled"
+        ret = job.retention
+        if hasattr(ret, "dict"):
+            ret_dict = ret.dict()
+        elif isinstance(ret, dict):
+            ret_dict = ret
+        else:
+            ret_dict = {}
+
+        policy = ret_dict.get(f"on_{status}") or ret_dict.get("on_completion")
+        if not policy:
+            if status == "completed":
+                policy = ret_dict.get("on_success")
+            elif status == "failed":
+                policy = ret_dict.get("on_failure")
+            elif status == "cancelled":
+                policy = ret_dict.get("on_cancelled")
+
+        if policy == "delete_all":
+            try:
+                import shutil
+                if job.output_dir.exists():
+                    shutil.rmtree(job.output_dir)
+                    print(f"Immediate cleanup: Deleted output directory for job {job.id}")
+            except Exception as e:
+                print(f"Failed to delete all files for job {job.id}: {e}")
+        elif policy == "delete_artifacts":
+            try:
+                keep_files = {"log.txt", "params.json", "metrics.jsonl"}
+                if job.output_dir.exists():
+                    for item in job.output_dir.iterdir():
+                        if item.is_file() and item.name not in keep_files:
+                            item.unlink()
+                        elif item.is_dir():
+                            import shutil
+                            shutil.rmtree(item)
+                    print(f"Immediate cleanup: Deleted non-log artifacts for job {job.id}")
+            except Exception as e:
+                print(f"Failed to delete artifacts for job {job.id}: {e}")
+
+    def _retention_cleaner_loop(self) -> None:
+        while True:
+            # Scan every 5 minutes (300 seconds)
+            time.sleep(300)
+            now = time.time()
+            jobs_to_clean = []
+            
+            with self._global_lock:
+                for job in self._jobs.values():
+                    if job.status not in ("completed", "failed", "cancelled"):
+                        continue
+                    if not job.retention:
+                        continue
+                    
+                    ret = job.retention
+                    if hasattr(ret, "dict"):
+                        ret_dict = ret.dict()
+                    elif isinstance(ret, dict):
+                        ret_dict = ret
+                    else:
+                        ret_dict = {}
+                        
+                    ttl_hours = ret_dict.get("ttl_hours")
+                    if ttl_hours is not None:
+                        finished_at = job.finished_at or job.created_at
+                        if now - finished_at > ttl_hours * 3600:
+                            if job.output_dir.exists():
+                                jobs_to_clean.append(job)
+                                
+            for job in jobs_to_clean:
+                try:
+                    import shutil
+                    if job.output_dir.exists():
+                        shutil.rmtree(job.output_dir)
+                        print(f"TTL cleanup: Deleted output directory for job {job.id}")
+                except Exception as e:
+                    print(f"Failed to TTL clean job {job.id}: {e}")
 
 
 job_queue = JobQueue()

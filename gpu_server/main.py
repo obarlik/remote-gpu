@@ -625,7 +625,7 @@ def submit_job(req: JobSubmitRequest, _: None = Depends(require_token)):
     For task='custom_script', params must include 'script_path' from a prior
     /v1/files upload. Returns the job with status='queued'."""
     try:
-        job = job_queue.submit(req.task, req.params, capabilities=req.capabilities, label=req.label)
+        job = job_queue.submit(req.task, req.params, capabilities=req.capabilities, label=req.label, retention=req.retention)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return job.to_dict()
@@ -684,9 +684,10 @@ def get_job_logs(
     if job is None:
         raise HTTPException(404, "Job not found")
     if not job.log_path.exists():
+        msg = "Logs deleted according to the retention policy.\n"
         if limit is not None:
-            return {"lines": [], "next_cursor": None, "total_bytes": 0, "has_more": False}
-        return PlainTextResponse("")
+            return {"lines": [msg.strip()], "next_cursor": None, "total_bytes": len(msg), "has_more": False}
+        return PlainTextResponse(msg)
 
     if limit is not None:
         # JSON Paginated Mode
@@ -728,6 +729,9 @@ def list_job_files(job_id: str, _: None = Depends(require_token)):
         raise HTTPException(404, "Job not found")
     
     files_info = []
+    if not job.output_dir.exists():
+        return files_info
+        
     for f in sorted(job.output_dir.iterdir()):
         if f.is_file():
             stat = f.stat()
@@ -756,6 +760,8 @@ def get_job_file(job_id: str, filename: str, _: None = Depends(require_token)):
     job = job_queue.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
+    if not job.output_dir.exists():
+        raise HTTPException(404, "Job output directory has been cleaned up by retention policy")
     requested = (job.output_dir / filename).resolve()
     if job.output_dir.resolve() not in requested.parents or not requested.is_file():
         raise HTTPException(404, "File not found")
